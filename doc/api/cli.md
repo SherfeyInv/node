@@ -885,12 +885,14 @@ following permissions are restricted:
 added: v11.8.0
 -->
 
+> Stability: 0 - Deprecated: Will be removed shortly.
+
 Use the specified file as a security policy.
 
 ### `--experimental-require-module`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 > Stability: 1.1 - Active Developement
@@ -1362,22 +1364,6 @@ added: v0.8.0
 
 Silence deprecation warnings.
 
-### `--no-experimental-fetch`
-
-<!-- YAML
-added: v18.0.0
--->
-
-Disable exposition of [Fetch API][] on the global scope.
-
-### `--no-experimental-global-customevent`
-
-<!-- YAML
-added: v19.0.0
--->
-
-Disable exposition of [CustomEvent Web API][] on the global scope.
-
 ### `--no-experimental-global-navigator`
 
 <!-- YAML
@@ -1387,14 +1373,6 @@ added: v21.2.0
 > Stability: 1 - Experimental
 
 Disable exposition of [Navigator API][] on the global scope.
-
-### `--no-experimental-global-webcrypto`
-
-<!-- YAML
-added: v19.0.0
--->
-
-Disable exposition of [Web Crypto API][] on the global scope.
 
 ### `--no-experimental-repl-await`
 
@@ -1407,7 +1385,7 @@ Use this flag to disable top-level await in REPL.
 ### `--no-experimental-websocket`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 Use this flag to disable experimental [`WebSocket`][] support.
@@ -1532,7 +1510,7 @@ developers may leverage to detect deprecated API usage.
 added: v12.7.0
 -->
 
-> Stability: 1 - Experimental
+> Stability: 0 - Deprecated: Will be removed shortly.
 
 Instructs Node.js to error prior to running any code if the policy does not have
 the specified integrity. It expects a [Subresource Integrity][] string as a
@@ -1618,7 +1596,7 @@ Identical to `-e` but prints the result.
 ### `--experimental-print-required-tla`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 This flag is only useful when `--experimental-require-module` is enabled.
@@ -1799,7 +1777,7 @@ native stack and other runtime environment data.
 ### `--report-exclude-network`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 Exclude `header.networkInterfaces` from the diagnostic report. By default
@@ -1823,7 +1801,7 @@ Modules preloaded with `--require` will run before modules preloaded with `--imp
 ### `--run`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 > Stability: 1.1 - Active development
@@ -1962,7 +1940,7 @@ concurrently. The default value is `os.availableParallelism() - 1`.
 ### `--test-force-exit`
 
 <!-- YAML
-added: REPLACEME
+added: v22.0.0
 -->
 
 Configures the test runner to exit the process once all known tests have
@@ -2421,7 +2399,7 @@ added:
   - v18.11.0
   - v16.19.0
 changes:
-  - version: REPLACEME
+  - version: v22.0.0
     pr-url: https://github.com/nodejs/node/pull/52074
     description: Watch mode is now stable.
   - version:
@@ -2454,7 +2432,7 @@ added:
   - v18.11.0
   - v16.19.0
 changes:
-  - version: REPLACEME
+  - version: v22.0.0
     pr-url: https://github.com/nodejs/node/pull/52074
     description: Watch mode is now stable.
 -->
@@ -2696,10 +2674,7 @@ one is included in the list below.
 * `--network-family-autoselection-attempt-timeout`
 * `--no-addons`
 * `--no-deprecation`
-* `--no-experimental-fetch`
-* `--no-experimental-global-customevent`
 * `--no-experimental-global-navigator`
-* `--no-experimental-global-webcrypto`
 * `--no-experimental-repl-await`
 * `--no-experimental-websocket`
 * `--no-extra-info-on-fatal-exception`
@@ -3169,11 +3144,9 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [Chrome DevTools Protocol]: https://chromedevtools.github.io/devtools-protocol/
 [CommonJS]: modules.md
 [CommonJS module]: modules.md
-[CustomEvent Web API]: https://dom.spec.whatwg.org/#customevent
 [DEP0025 warning]: deprecations.md#dep0025-requirenodesys
 [ECMAScript module]: esm.md#modules-ecmascript-modules
 [ExperimentalWarning: `vm.measureMemory` is an experimental feature]: vm.md#vmmeasurememoryoptions
-[Fetch API]: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
 [File System Permissions]: permissions.md#file-system-permissions
 [Loading ECMAScript modules using `require()`]: modules.md#loading-ecmascript-modules-using-require
 [Module customization hooks]: module.md#customization-hooks
@@ -3190,7 +3163,6 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [Subresource Integrity]: https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity
 [V8 JavaScript code coverage]: https://v8project.blogspot.com/2017/12/javascript-code-coverage.html
 [V8 code cache]: https://v8.dev/blog/code-caching-for-devs
-[Web Crypto API]: webcrypto.md
 [`"type"`]: packages.md#type
 [`--allow-child-process`]: #--allow-child-process
 [`--allow-fs-read`]: #--allow-fs-read

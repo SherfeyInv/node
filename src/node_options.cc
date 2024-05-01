@@ -396,31 +396,19 @@ EnvironmentOptionsParser::EnvironmentOptionsParser() {
             &EnvironmentOptions::enable_source_maps,
             kAllowedInEnvvar);
   AddOption("--experimental-abortcontroller", "", NoOp{}, kAllowedInEnvvar);
-  AddOption("--experimental-fetch",
-            "experimental Fetch API",
-            &EnvironmentOptions::experimental_fetch,
-            kAllowedInEnvvar,
-            true);
+  AddOption("--experimental-fetch", "", NoOp{}, kAllowedInEnvvar);
   AddOption("--experimental-websocket",
             "experimental WebSocket API",
             &EnvironmentOptions::experimental_websocket,
             kAllowedInEnvvar,
             true);
-  AddOption("--experimental-global-customevent",
-            "expose experimental CustomEvent on the global scope",
-            &EnvironmentOptions::experimental_global_customevent,
-            kAllowedInEnvvar,
-            true);
+  AddOption("--experimental-global-customevent", "", NoOp{}, kAllowedInEnvvar);
   AddOption("--experimental-global-navigator",
             "expose experimental Navigator API on the global scope",
             &EnvironmentOptions::experimental_global_navigator,
             kAllowedInEnvvar,
             true);
-  AddOption("--experimental-global-webcrypto",
-            "expose experimental Web Crypto API on the global scope",
-            &EnvironmentOptions::experimental_global_web_crypto,
-            kAllowedInEnvvar,
-            true);
+  AddOption("--experimental-global-webcrypto", "", NoOp{}, kAllowedInEnvvar);
   AddOption("--experimental-json-modules", "", NoOp{}, kAllowedInEnvvar);
   AddOption("--experimental-loader",
             "use the specified module as a custom loader",
