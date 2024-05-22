@@ -565,6 +565,45 @@ const vm = require('node:vm');
 vm.measureMemory();
 ```
 
+### `--disable-wasm-trap-handler`
+
+<!-- YAML
+added: v22.2.0
+-->
+
+By default, Node.js enables trap-handler-based WebAssembly bound
+checks. As a result, V8 does not need to insert inline bound checks
+int the code compiled from WebAssembly which may speedup WebAssembly
+execution significantly, but this optimization requires allocating
+a big virtual memory cage (currently 10GB). If the Node.js process
+does not have access to a large enough virtual memory address space
+due to system configurations or hardware limitations, users won't
+be able to run any WebAssembly that involves allocation in this
+virtual memory cage and will see an out-of-memory error.
+
+```console
+$ ulimit -v 5000000
+$ node -p "new WebAssembly.Memory({ initial: 10, maximum: 100 });"
+[eval]:1
+new WebAssembly.Memory({ initial: 10, maximum: 100 });
+^
+
+RangeError: WebAssembly.Memory(): could not allocate memory
+    at [eval]:1:1
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:118:14
+    at [eval]-wrapper:6:24
+    at runScript (node:internal/process/execution:101:62)
+    at evalScript (node:internal/process/execution:136:3)
+    at node:internal/main/eval_string:49:3
+
+```
+
+`--disable-wasm-trap-handler` disables this optimization so that
+users can at least run WebAssembly (with less optimal performance)
+when the virtual memory address space available to their Node.js
+process is lower than what the V8 WebAssembly memory cage needs.
+
 ### `--disable-proto=mode`
 
 <!-- YAML
@@ -594,7 +633,9 @@ added:
   - v16.4.0
   - v14.18.0
 changes:
-  - version: REPLACEME
+  - version:
+    - v22.1.0
+    - v20.13.0
     pr-url: https://github.com/nodejs/node/pull/52492
     description: The `ipv6first` is supported now.
   - version: v17.0.0
@@ -812,6 +853,14 @@ CommonJS. This includes the following:
 * Lexical redeclarations of the CommonJS wrapper variables (`require`, `module`,
   `exports`, `__dirname`, `__filename`).
 
+### `--experimental-eventsource`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+Enable exposition of [EventSource Web API][] on the global scope.
+
 ### `--experimental-import-meta-resolve`
 
 <!-- YAML
@@ -879,16 +928,6 @@ following permissions are restricted:
 * Child Process - manageable through [`--allow-child-process`][] flag
 * Worker Threads - manageable through [`--allow-worker`][] flag
 
-### `--experimental-policy`
-
-<!-- YAML
-added: v11.8.0
--->
-
-> Stability: 0 - Deprecated: Will be removed shortly.
-
-Use the specified file as a security policy.
-
 ### `--experimental-require-module`
 
 <!-- YAML
@@ -941,6 +980,16 @@ When used in conjunction with the `node:test` module, a code coverage report is
 generated as part of the test runner output. If no tests are run, a coverage
 report is not generated. See the documentation on
 [collecting code coverage from tests][] for more details.
+
+### `--experimental-test-module-mocks`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+> Stability: 1.0 - Early development
+
+Enable module mocking in the test runner.
 
 ### `--experimental-vm-modules`
 
@@ -1241,6 +1290,7 @@ Activate inspector on `host:port`. Default is `127.0.0.1:9229`.
 V8 inspector integration allows tools such as Chrome DevTools and IDEs to debug
 and profile Node.js instances. The tools attach to Node.js instances via a
 tcp port and communicate using the [Chrome DevTools Protocol][].
+See [V8 Inspector integration for Node.js][] for further explanation on Node.js debugger.
 
 <!-- Anchor to make sure old links find a target -->
 
@@ -1271,6 +1321,8 @@ added: v7.6.0
 Activate inspector on `host:port` and break at start of user script.
 Default `host:port` is `127.0.0.1:9229`.
 
+See [V8 Inspector integration for Node.js][] for further explanation on Node.js debugger.
+
 ### `--inspect-port=[host:]port`
 
 <!-- YAML
@@ -1291,6 +1343,17 @@ Specify ways of the inspector web socket url exposure.
 
 By default inspector websocket url is available in stderr and under `/json/list`
 endpoint on `http://host:port/json/list`.
+
+### `--inspect-wait[=[host:]port]`
+
+<!-- YAML
+added: v22.2.0
+-->
+
+Activate inspector on `host:port` and wait for debugger to be attached.
+Default `host:port` is `127.0.0.1:9229`.
+
+See [V8 Inspector integration for Node.js][] for further explanation on Node.js debugger.
 
 ### `-i`, `--interactive`
 
@@ -1338,7 +1401,9 @@ This option is a no-op. It is kept for compatibility.
 ### `--network-family-autoselection-attempt-timeout`
 
 <!-- YAML
-added: REPLACEME
+added:
+  - v22.1.0
+  - v20.13.0
 -->
 
 Sets the default value for the network family autoselection attempt timeout.
@@ -1503,18 +1568,6 @@ unless either the `--pending-deprecation` command-line flag, or the
 `NODE_PENDING_DEPRECATION=1` environment variable, is set. Pending deprecations
 are used to provide a kind of selective "early warning" mechanism that
 developers may leverage to detect deprecated API usage.
-
-### `--policy-integrity=sri`
-
-<!-- YAML
-added: v12.7.0
--->
-
-> Stability: 0 - Deprecated: Will be removed shortly.
-
-Instructs Node.js to error prior to running any code if the policy does not have
-the specified integrity. It expects a [Subresource Integrity][] string as a
-parameter.
 
 ### `--preserve-symlinks`
 
@@ -1777,7 +1830,9 @@ native stack and other runtime environment data.
 ### `--report-exclude-network`
 
 <!-- YAML
-added: v22.0.0
+added:
+  - v22.0.0
+  - v20.13.0
 -->
 
 Exclude `header.networkInterfaces` from the diagnostic report. By default
@@ -1802,6 +1857,13 @@ Modules preloaded with `--require` will run before modules preloaded with `--imp
 
 <!-- YAML
 added: v22.0.0
+changes:
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/53032
+    description: NODE_RUN_SCRIPT_NAME environment variable is added.
+  - version: REPLACEME
+    pr-url: https://github.com/nodejs/node/pull/53058
+    description: NODE_RUN_PACKAGE_JSON_PATH environment variable is added.
 -->
 
 > Stability: 1.1 - Active development
@@ -1841,6 +1903,15 @@ are:
   current folder.
 * Running `pre` or `post` scripts in addition to the specified script.
 * Defining package manager-specific environment variables.
+
+#### Environment variables
+
+The following environment variables are set when running a script with `--run`:
+
+* `NODE_RUN_SCRIPT_NAME`: The name of the script being run. For example, if
+  `--run` is used to run `test`, the value of this variable will be `test`.
+* `NODE_RUN_PACKAGE_JSON_PATH`: The path to the `package.json` that is being
+  processed.
 
 ### `--secure-heap=n`
 
@@ -2035,7 +2106,7 @@ node --test --test-shard=3/3
 
 <!-- YAML
 added:
-  - REPLACEME
+  - v22.1.0
 -->
 
 A regular expression that configures the test runner to skip tests
@@ -2155,39 +2226,6 @@ added: v12.0.0
 
 Set default [`tls.DEFAULT_MIN_VERSION`][] to 'TLSv1.3'. Use to disable support
 for TLSv1.2, which is not as secure as TLSv1.3.
-
-### `--trace-atomics-wait`
-
-<!-- YAML
-added: v14.3.0
-deprecated:
-  - v18.8.0
-  - v16.18.0
--->
-
-> Stability: 0 - Deprecated
-
-Print short summaries of calls to [`Atomics.wait()`][] to stderr.
-The output could look like this:
-
-```text
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 0, 1, inf) started
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 0, 1, inf) did not wait because the values mismatched
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 0, 0, 10) started
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 0, 0, 10) timed out
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 4, 0, inf) started
-(node:15701) [Thread 1] Atomics.wait(&lt;address> + 4, -1, inf) started
-(node:15701) [Thread 0] Atomics.wait(&lt;address> + 4, 0, inf) was woken up by another thread
-(node:15701) [Thread 1] Atomics.wait(&lt;address> + 4, -1, inf) was woken up by another thread
-```
-
-The fields here correspond to:
-
-* The thread id as given by [`worker_threads.threadId`][]
-* The base address of the `SharedArrayBuffer` in question, as well as the
-  byte offset corresponding to the index passed to `Atomics.wait()`
-* The expected value that was passed to `Atomics.wait()`
-* The timeout passed to `Atomics.wait`
 
 ### `--trace-deprecation`
 
@@ -2399,7 +2437,9 @@ added:
   - v18.11.0
   - v16.19.0
 changes:
-  - version: v22.0.0
+  - version:
+    - v22.0.0
+    - v20.13.0
     pr-url: https://github.com/nodejs/node/pull/52074
     description: Watch mode is now stable.
   - version:
@@ -2432,7 +2472,9 @@ added:
   - v18.11.0
   - v16.19.0
 changes:
-  - version: v22.0.0
+  - version:
+    - v22.0.0
+    - v20.13.0
     pr-url: https://github.com/nodejs/node/pull/52074
     description: Watch mode is now stable.
 -->
@@ -2497,7 +2539,7 @@ environment variable is arbitrary.
 ### `NODE_COMPILE_CACHE=dir`
 
 <!-- YAML
-added: REPLACEME
+added: v22.1.0
 -->
 
 > Stability: 1.1 - Active Development
@@ -2632,6 +2674,7 @@ one is included in the list below.
 * `--diagnostic-dir`
 * `--disable-proto`
 * `--disable-warning`
+* `--disable-wasm-trap-handler`
 * `--dns-result-order`
 * `--enable-fips`
 * `--enable-network-family-autoselection`
@@ -2639,13 +2682,13 @@ one is included in the list below.
 * `--experimental-abortcontroller`
 * `--experimental-default-type`
 * `--experimental-detect-module`
+* `--experimental-eventsource`
 * `--experimental-import-meta-resolve`
 * `--experimental-json-modules`
 * `--experimental-loader`
 * `--experimental-modules`
 * `--experimental-network-imports`
 * `--experimental-permission`
-* `--experimental-policy`
 * `--experimental-print-required-tla`
 * `--experimental-require-module`
 * `--experimental-shadow-realm`
@@ -2668,6 +2711,7 @@ one is included in the list below.
 * `--inspect-brk`
 * `--inspect-port`, `--debug-port`
 * `--inspect-publish-uid`
+* `--inspect-wait`
 * `--inspect`
 * `--max-http-header-size`
 * `--napi-modules`
@@ -2687,7 +2731,6 @@ one is included in the list below.
 * `--openssl-legacy-provider`
 * `--openssl-shared-config`
 * `--pending-deprecation`
-* `--policy-integrity`
 * `--preserve-symlinks-main`
 * `--preserve-symlinks`
 * `--prof-process`
@@ -2718,7 +2761,6 @@ one is included in the list below.
 * `--tls-min-v1.1`
 * `--tls-min-v1.2`
 * `--tls-min-v1.3`
-* `--trace-atomics-wait`
 * `--trace-deprecation`
 * `--trace-event-categories`
 * `--trace-event-file-pattern`
@@ -3146,6 +3188,7 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [CommonJS module]: modules.md
 [DEP0025 warning]: deprecations.md#dep0025-requirenodesys
 [ECMAScript module]: esm.md#modules-ecmascript-modules
+[EventSource Web API]: https://html.spec.whatwg.org/multipage/server-sent-events.html#server-sent-events
 [ExperimentalWarning: `vm.measureMemory` is an experimental feature]: vm.md#vmmeasurememoryoptions
 [File System Permissions]: permissions.md#file-system-permissions
 [Loading ECMAScript modules using `require()`]: modules.md#loading-ecmascript-modules-using-require
@@ -3160,7 +3203,7 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [ScriptCoverage]: https://chromedevtools.github.io/devtools-protocol/tot/Profiler#type-ScriptCoverage
 [ShadowRealm]: https://github.com/tc39/proposal-shadowrealm
 [Source Map]: https://sourcemaps.info/spec.html
-[Subresource Integrity]: https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity
+[V8 Inspector integration for Node.js]: debugger.md#v8-inspector-integration-for-nodejs
 [V8 JavaScript code coverage]: https://v8project.blogspot.com/2017/12/javascript-code-coverage.html
 [V8 code cache]: https://v8.dev/blog/code-caching-for-devs
 [`"type"`]: packages.md#type
@@ -3181,7 +3224,6 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [`--print`]: #-p---print-script
 [`--redirect-warnings`]: #--redirect-warningsfile
 [`--require`]: #-r---require-module
-[`Atomics.wait()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Atomics/wait
 [`Buffer`]: buffer.md#class-buffer
 [`CRYPTO_secure_malloc_init`]: https://www.openssl.org/docs/man3.0/man3/CRYPTO_secure_malloc_init.html
 [`NODE_OPTIONS`]: #node_optionsoptions
@@ -3201,7 +3243,6 @@ node --stack-trace-limit=12 -p -e "Error.stackTraceLimit" # prints 12
 [`tls.DEFAULT_MIN_VERSION`]: tls.md#tlsdefault_min_version
 [`unhandledRejection`]: process.md#event-unhandledrejection
 [`v8.startupSnapshot` API]: v8.md#startup-snapshot-api
-[`worker_threads.threadId`]: worker_threads.md#workerthreadid
 [collecting code coverage from tests]: test.md#collecting-code-coverage
 [conditional exports]: packages.md#conditional-exports
 [context-aware]: addons.md#context-aware-addons

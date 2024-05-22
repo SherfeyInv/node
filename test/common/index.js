@@ -32,6 +32,7 @@ const net = require('net');
 const path = require('path');
 const { inspect } = require('util');
 const { isMainThread } = require('worker_threads');
+const { isModuleNamespaceObject } = require('util/types');
 
 const tmpdir = require('./tmpdir');
 const bits = ['arm64', 'loong64', 'mips', 'mipsel', 'ppc64', 'riscv64', 's390x', 'x64']
@@ -279,6 +280,7 @@ function platformTimeout(ms) {
 }
 
 let knownGlobals = [
+  AbortController,
   atob,
   btoa,
   clearImmediate,
@@ -290,15 +292,6 @@ let knownGlobals = [
   setTimeout,
   queueMicrotask,
 ];
-
-// TODO(@jasnell): This check can be temporary. AbortController is
-// not currently supported in either Node.js 12 or 10, making it
-// difficult to run tests comparatively on those versions. Once
-// all supported versions have AbortController as a global, this
-// check can be removed and AbortController can be added to the
-// knownGlobals list above.
-if (global.AbortController)
-  knownGlobals.push(global.AbortController);
 
 if (global.gc) {
   knownGlobals.push(global.gc);
@@ -330,6 +323,10 @@ if (global.PerformanceMeasure) {
 // can add this to the list above instead.
 if (global.structuredClone) {
   knownGlobals.push(global.structuredClone);
+}
+
+if (global.EventSource) {
+  knownGlobals.push(EventSource);
 }
 
 if (global.fetch) {
@@ -602,7 +599,8 @@ function printSkipMessage(msg) {
 
 function skip(msg) {
   printSkipMessage(msg);
-  process.exit(0);
+  // In known_issues test, skipping should produce a non-zero exit code.
+  process.exit(require.main?.filename.startsWith(path.resolve(__dirname, '../known_issues/')) ? 1 : 0);
 }
 
 // Returns true if the exit code "exitCode" and/or signal name "signal"
@@ -938,6 +936,18 @@ function getPrintedStackTrace(stderr) {
   return result;
 }
 
+/**
+ * Check the exports of require(esm).
+ * TODO(joyeecheung): use it in all the test-require-module-* tests to minimize changes
+ * if/when we change the layout of the result returned by require(esm).
+ * @param {object} mod result returned by require()
+ * @param {object} expectation shape of expected namespace.
+ */
+function expectRequiredModule(mod, expectation) {
+  assert(isModuleNamespaceObject(mod));
+  assert.deepStrictEqual({ ...mod }, { ...expectation });
+}
+
 const common = {
   allowGlobals,
   buildType,
@@ -946,6 +956,7 @@ const common = {
   createZeroFilledFile,
   defaultAutoSelectFamilyAttemptTimeout,
   expectsError,
+  expectRequiredModule,
   expectWarning,
   gcUntil,
   getArrayBufferViews,

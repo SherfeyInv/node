@@ -1274,7 +1274,9 @@ run({ files: [path.resolve('./tests/test.js')] })
 ## `suite([name][, options][, fn])`
 
 <!-- YAML
-added: v22.0.0
+added:
+  - v22.0.0
+  - v20.13.0
 -->
 
 * `name` {string} The name of the suite, which is displayed when reporting test
@@ -1292,7 +1294,9 @@ The `suite()` function is imported from the `node:test` module.
 ## `suite.skip([name][, options][, fn])`
 
 <!-- YAML
-added: v22.0.0
+added:
+  - v22.0.0
+  - v20.13.0
 -->
 
 Shorthand for skipping a suite. This is the same as
@@ -1301,7 +1305,9 @@ Shorthand for skipping a suite. This is the same as
 ## `suite.todo([name][, options][, fn])`
 
 <!-- YAML
-added: v22.0.0
+added:
+  - v22.0.0
+  - v20.13.0
 -->
 
 Shorthand for marking a suite as `TODO`. This is the same as
@@ -1310,7 +1316,9 @@ Shorthand for marking a suite as `TODO`. This is the same as
 ## `suite.only([name][, options][, fn])`
 
 <!-- YAML
-added: v22.0.0
+added:
+  - v22.0.0
+  - v20.13.0
 -->
 
 Shorthand for marking a suite as `only`. This is the same as
@@ -1364,6 +1372,10 @@ changes:
   * `timeout` {number} A number of milliseconds the test will fail after.
     If unspecified, subtests inherit this value from their parent.
     **Default:** `Infinity`.
+  * `plan` {number} The number of assertions and subtests expected to be run in the test.
+    If the number of assertions run in the test does not match the number
+    specified in the plan, the test will fail.
+    **Default:** `undefined`.
 * `fn` {Function|AsyncFunction} The function under test. The first argument
   to this function is a [`TestContext`][] object. If the test uses callbacks,
   the callback function is passed as the second argument. **Default:** A no-op
@@ -1763,6 +1775,25 @@ added:
 Resets the implementation of the mock function to its original behavior. The
 mock can still be used after calling this function.
 
+## Class: `MockModuleContext`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+> Stability: 1.0 - Early development
+
+The `MockModuleContext` class is used to manipulate the behavior of module mocks
+created via the [`MockTracker`][] APIs.
+
+### `ctx.restore()`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+Resets the implementation of the mock module.
+
 ## Class: `MockTracker`
 
 <!-- YAML
@@ -1896,6 +1927,68 @@ test('spies on an object method', (t) => {
 });
 ```
 
+### `mock.module(specifier[, options])`
+
+<!-- YAML
+added: REPLACEME
+-->
+
+> Stability: 1.0 - Early development
+
+* `specifier` {string} A string identifying the module to mock.
+* `options` {Object} Optional configuration options for the mock module. The
+  following properties are supported:
+  * `cache` {boolean} If `false`, each call to `require()` or `import()`
+    generates a new mock module. If `true`, subsequent calls will return the same
+    module mock, and the mock module is inserted into the CommonJS cache.
+    **Default:** false.
+  * `defaultExport` {any} An optional value used as the mocked module's default
+    export. If this value is not provided, ESM mocks do not include a default
+    export. If the mock is a CommonJS or builtin module, this setting is used as
+    the value of `module.exports`. If this value is not provided, CJS and builtin
+    mocks use an empty object as the value of `module.exports`.
+  * `namedExports` {Object} An optional object whose keys and values are used to
+    create the named exports of the mock module. If the mock is a CommonJS or
+    builtin module, these values are copied onto `module.exports`. Therefore, if a
+    mock is created with both named exports and a non-object default export, the
+    mock will throw an exception when used as a CJS or builtin module.
+* Returns: {MockModuleContext} An object that can be used to manipulate the mock.
+
+This function is used to mock the exports of ECMAScript modules, CommonJS
+modules, and Node.js builtin modules. Any references to the original module
+prior to mocking are not impacted. The following example demonstrates how a mock
+is created for a module.
+
+```js
+test('mocks a builtin module in both module systems', async (t) => {
+  // Create a mock of 'node:readline' with a named export named 'fn', which
+  // does not exist in the original 'node:readline' module.
+  const mock = t.mock.module('node:readline', {
+    namedExports: { fn() { return 42; } },
+  });
+
+  let esmImpl = await import('node:readline');
+  let cjsImpl = require('node:readline');
+
+  // cursorTo() is an export of the original 'node:readline' module.
+  assert.strictEqual(esmImpl.cursorTo, undefined);
+  assert.strictEqual(cjsImpl.cursorTo, undefined);
+  assert.strictEqual(esmImpl.fn(), 42);
+  assert.strictEqual(cjsImpl.fn(), 42);
+
+  mock.restore();
+
+  // The mock is restored, so the original builtin module is returned.
+  esmImpl = await import('node:readline');
+  cjsImpl = require('node:readline');
+
+  assert.strictEqual(typeof esmImpl.cursorTo, 'function');
+  assert.strictEqual(typeof cjsImpl.cursorTo, 'function');
+  assert.strictEqual(esmImpl.fn, undefined);
+  assert.strictEqual(cjsImpl.fn, undefined);
+});
+```
+
 ### `mock.reset()`
 
 <!-- YAML
@@ -1979,7 +2072,8 @@ Enables timer mocking for the specified timers.
     The currently supported timer values are `'setInterval'`, `'setTimeout'`, `'setImmediate'`,
     and `'Date'`. **Default:** `['setInterval', 'setTimeout', 'setImmediate', 'Date']`.
     If no array is provided, all time related APIs (`'setInterval'`, `'clearInterval'`,
-    `'setTimeout'`, `'clearTimeout'`, and `'Date'`) will be mocked by default.
+    `'setTimeout'`, `'clearTimeout'`, `'setImmediate'`, `'clearImmediate'`, and
+    `'Date'`) will be mocked by default.
   * `now` {number | Date} An optional number or Date object representing the
     initial time (in milliseconds) to use as the value
     for `Date.now()`. **Default:** `0`.
@@ -2034,10 +2128,11 @@ mock.timers.enable({ apis: ['Date'], now: new Date() });
 
 Alternatively, if you call `mock.timers.enable()` without any parameters:
 
-All timers (`'setInterval'`, `'clearInterval'`, `'setTimeout'`, and `'clearTimeout'`)
-will be mocked. The `setInterval`, `clearInterval`, `setTimeout`, and `clearTimeout`
-functions from `node:timers`, `node:timers/promises`,
-and `globalThis` will be mocked. As well as the global `Date` object.
+All timers (`'setInterval'`, `'clearInterval'`, `'setTimeout'`, `'clearTimeout'`,
+`'setImmediate'`, and `'clearImmediate'`) will be mocked. The `setInterval`,
+`clearInterval`, `setTimeout`, `clearTimeout`, `setImmediate`, and
+`clearImmediate` functions from `node:timers`, `node:timers/promises`, and
+`globalThis` will be mocked. As well as the global `Date` object.
 
 ### `timers.reset()`
 
@@ -2068,7 +2163,7 @@ mock.timers.reset();
 
 Calls `timers.reset()`.
 
-### `timers.tick(milliseconds)`
+### `timers.tick([milliseconds])`
 
 <!-- YAML
 added:
@@ -2079,7 +2174,7 @@ added:
 Advances time for all mocked timers.
 
 * `milliseconds` {number} The amount of time, in milliseconds,
-  to advance the timers.
+  to advance the timers. **Default:** `1`.
 
 **Note:** This diverges from how `setTimeout` in Node.js behaves and accepts
 only positive numbers. In Node.js, `setTimeout` with negative numbers is
@@ -2965,6 +3060,54 @@ added:
 
 The name of the test.
 
+### `context.plan(count)`
+
+<!-- YAML
+added:
+  - v22.2.0
+-->
+
+> Stability: 1 - Experimental
+
+* `count` {number} The number of assertions and subtests that are expected to run.
+
+This function is used to set the number of assertions and subtests that are expected to run
+within the test. If the number of assertions and subtests that run does not match the
+expected count, the test will fail.
+
+> Note: To make sure assertions are tracked, `t.assert` must be used instead of `assert` directly.
+
+```js
+test('top level test', (t) => {
+  t.plan(2);
+  t.assert.ok('some relevant assertion here');
+  t.subtest('subtest', () => {});
+});
+```
+
+When working with asynchronous code, the `plan` function can be used to ensure that the
+correct number of assertions are run:
+
+```js
+test('planning with streams', (t, done) => {
+  function* generate() {
+    yield 'a';
+    yield 'b';
+    yield 'c';
+  }
+  const expected = ['a', 'b', 'c'];
+  t.plan(expected.length);
+  const stream = Readable.from(generate());
+  stream.on('data', (chunk) => {
+    t.assert.strictEqual(chunk, expected.shift());
+  });
+
+  stream.on('end', () => {
+    done();
+  });
+});
+```
+
 ### `context.runOnly(shouldRunOnlyTests)`
 
 <!-- YAML
@@ -3095,6 +3238,10 @@ changes:
   * `timeout` {number} A number of milliseconds the test will fail after.
     If unspecified, subtests inherit this value from their parent.
     **Default:** `Infinity`.
+  * `plan` {number} The number of assertions and subtests expected to be run in the test.
+    If the number of assertions run in the test does not match the number
+    specified in the plan, the test will fail.
+    **Default:** `undefined`.
 * `fn` {Function|AsyncFunction} The function under test. The first argument
   to this function is a [`TestContext`][] object. If the test uses callbacks,
   the callback function is passed as the second argument. **Default:** A no-op
@@ -3108,7 +3255,7 @@ behaves in the same fashion as the top level [`test()`][] function.
 test('top level test', async (t) => {
   await t.test(
     'This is a subtest',
-    { only: false, skip: false, concurrency: 1, todo: false },
+    { only: false, skip: false, concurrency: 1, todo: false, plan: 4 },
     (t) => {
       assert.ok('some relevant assertion here');
     },

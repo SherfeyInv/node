@@ -82,29 +82,6 @@ constexpr char kPathSeparator = '/';
 const char* const kPathSeparator = "\\/";
 #endif
 
-std::string Basename(const std::string& str, const std::string& extension) {
-  // Remove everything leading up to and including the final path separator.
-  std::string::size_type pos = str.find_last_of(kPathSeparator);
-
-  // Starting index for the resulting string
-  std::size_t start_pos = 0;
-  // String size to return
-  std::size_t str_size = str.size();
-  if (pos != std::string::npos) {
-    start_pos = pos + 1;
-    str_size -= start_pos;
-  }
-
-  // Strip away the extension, if any.
-  if (str_size >= extension.size() &&
-      str.compare(str.size() - extension.size(),
-        extension.size(), extension) == 0) {
-    str_size -= extension.size();
-  }
-
-  return str.substr(start_pos, str_size);
-}
-
 inline int64_t GetOffset(Local<Value> value) {
   return IsSafeJsInt(value) ? value.As<Integer>()->Value() : -1;
 }
@@ -1054,7 +1031,7 @@ static void InternalModuleStat(const FunctionCallbackInfo<Value>& args) {
   int rc = uv_fs_stat(env->event_loop(), &req, *path, nullptr);
   if (rc == 0) {
     const uv_stat_t* const s = static_cast<const uv_stat_t*>(req.ptr);
-    rc = !!(s->st_mode & S_IFDIR);
+    rc = S_ISDIR(s->st_mode);
   }
   uv_fs_req_cleanup(&req);
 
@@ -2982,7 +2959,7 @@ BindingData::FilePathIsFileReturnType BindingData::FilePathIsFile(
 
   if (rc == 0) {
     const uv_stat_t* const s = static_cast<const uv_stat_t*>(req.ptr);
-    rc = !!(s->st_mode & S_IFDIR);
+    rc = S_ISDIR(s->st_mode);
   }
 
   uv_fs_req_cleanup(&req);
