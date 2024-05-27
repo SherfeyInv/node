@@ -124,7 +124,6 @@ BuiltinLoader::BuiltinCategories BuiltinLoader::GetBuiltinCategories() const {
         "_tls_wrap", "internal/tls/secure-pair",
         "internal/tls/parse-cert-string", "internal/tls/secure-context",
         "internal/http2/core", "internal/http2/compat",
-        "internal/policy/manifest", "internal/process/policy",
         "internal/streams/lazy_transform",
 #endif           // !HAVE_OPENSSL
         "sys",   // Deprecated.
@@ -266,7 +265,7 @@ MaybeLocal<Function> BuiltinLoader::LookupAndCompileInternal(
   std::string filename_s = std::string("node:") + id;
   Local<String> filename =
       OneByteString(isolate, filename_s.c_str(), filename_s.size());
-  ScriptOrigin origin(isolate, filename, 0, 0, true);
+  ScriptOrigin origin(filename, 0, 0, true);
 
   BuiltinCodeCacheData cached_data{};
   {
