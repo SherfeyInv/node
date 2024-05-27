@@ -613,8 +613,8 @@ bool Simplify(const std::vector<char>& code,
   }
 
   if (simplified_count > 0) {
-    Debug("Simplified %d characters, ", simplified_count);
-    Debug("old size %d, new size %d\n", code_size, simplified->size());
+    Debug("Simplified %lu characters, ", simplified_count);
+    Debug("old size %lu, new size %lu\n", code_size, simplified->size());
     return true;
   }
   return false;
@@ -927,6 +927,13 @@ int Main(int argc, char* argv[]) {
   auto js_it = file_map.find(".js");
   auto mjs_it = file_map.find(".mjs");
   assert(js_it != file_map.end() && mjs_it != file_map.end());
+
+  auto it = std::find(mjs_it->second.begin(),
+                      mjs_it->second.end(),
+                      "lib/eslint.config_partial.mjs");
+  if (it != mjs_it->second.end()) {
+    mjs_it->second.erase(it);
+  }
 
   std::sort(js_it->second.begin(), js_it->second.end());
   std::sort(mjs_it->second.begin(), mjs_it->second.end());
