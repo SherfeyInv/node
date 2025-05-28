@@ -257,7 +257,12 @@ TEST_F(CodePagesTest, OptimizedCodeWithCodePages) {
     }
   }
 
-  InvokeMajorGC();
+  {
+    // The resource may not be reclaimed because of conservative stack scanning.
+    DisableConservativeStackScanningScopeForTesting no_stack_scanning(
+        i_isolate()->heap());
+    InvokeMajorGC();
+  }
 
   std::vector<MemoryRange>* pages = i_isolate()->GetCodePages();
   auto it = std::find_if(
@@ -270,8 +275,6 @@ TEST_F(CodePagesTest, LargeCodeObject) {
   // We don't want incremental marking to start which could cause the code to
   // not be collected on the CollectGarbage() call.
   ManualGCScope manual_gc_scope(i_isolate());
-  DisableConservativeStackScanningScopeForTesting no_stack_scanning(
-      i_isolate()->heap());
 
   if (!i_isolate()->RequiresCodeRange() && !kHaveCodePages) return;
 
@@ -313,7 +316,12 @@ TEST_F(CodePagesTest, LargeCodeObject) {
   }
 
   // Delete the large code object.
-  InvokeMajorGC();
+  {
+    // The resource may not be reclaimed because of conservative stack scanning.
+    DisableConservativeStackScanningScopeForTesting no_stack_scanning(
+        i_isolate()->heap());
+    InvokeMajorGC();
+  }
   EXPECT_TRUE(
       !i_isolate()->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
 
@@ -388,8 +396,6 @@ TEST_F(CodePagesTest, LargeCodeObjectWithSignalHandler) {
   // We don't want incremental marking to start which could cause the code to
   // not be collected on the CollectGarbage() call.
   ManualGCScope manual_gc_scope(i_isolate());
-  DisableConservativeStackScanningScopeForTesting no_stack_scanning(
-      i_isolate()->heap());
 
   if (!i_isolate()->RequiresCodeRange() && !kHaveCodePages) return;
 
@@ -449,7 +455,12 @@ TEST_F(CodePagesTest, LargeCodeObjectWithSignalHandler) {
   sampling_thread.StartSynchronously();
 
   // Delete the large code object.
-  InvokeMajorGC();
+  {
+    // The resource may not be reclaimed because of conservative stack scanning.
+    DisableConservativeStackScanningScopeForTesting no_stack_scanning(
+        i_isolate()->heap());
+    InvokeMajorGC();
+  }
   EXPECT_TRUE(
       !i_isolate()->heap()->InSpaceSlow(stale_code_address, CODE_LO_SPACE));
 
@@ -467,8 +478,6 @@ TEST_F(CodePagesTest, Sorted) {
   // We don't want incremental marking to start which could cause the code to
   // not be collected on the CollectGarbage() call.
   ManualGCScope manual_gc_scope(i_isolate());
-  DisableConservativeStackScanningScopeForTesting no_stack_scanning(
-      i_isolate()->heap());
 
   if (!i_isolate()->RequiresCodeRange() && !kHaveCodePages) return;
 
@@ -497,7 +506,7 @@ TEST_F(CodePagesTest, Sorted) {
   };
   {
     HandleScope outer_scope(i_isolate());
-    Handle<InstructionStream> code1, code3;
+    IndirectHandle<InstructionStream> code1, code3;
     Address code2_address;
 
     code1 =
@@ -552,7 +561,13 @@ TEST_F(CodePagesTest, Sorted) {
     EXPECT_TRUE(
         i_isolate()->heap()->InSpaceSlow(code3->address(), CODE_LO_SPACE));
     // Delete code2.
-    InvokeMajorGC();
+    {
+      // The resource may not be reclaimed because of conservative stack
+      // scanning.
+      DisableConservativeStackScanningScopeForTesting no_stack_scanning(
+          i_isolate()->heap());
+      InvokeMajorGC();
+    }
     EXPECT_TRUE(
         i_isolate()->heap()->InSpaceSlow(code1->address(), CODE_LO_SPACE));
     EXPECT_TRUE(

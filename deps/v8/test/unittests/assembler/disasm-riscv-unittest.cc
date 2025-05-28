@@ -271,6 +271,16 @@ TEST_F(DisasmRiscvTest, CSR) {
 
   VERIFY_RUN();
 }
+
+TEST_F(DisasmRiscvTest, ZICOND) {
+  SET_UP();
+
+  COMPARE(czero_eqz(a0, s1, t3), "0fc4d533       czero.eqz a0, s1, t3");
+  COMPARE(czero_nez(s3, a1, t1), "0e65f9b3       czero.nez s3, a1, t1");
+
+  VERIFY_RUN();
+}
+
 #ifdef V8_TARGET_ARCH_RISCV64
 TEST_F(DisasmRiscvTest, RV64I) {
   SET_UP();
@@ -363,7 +373,7 @@ TEST_F(DisasmRiscvTest, RV64A) {
   COMPARE(amomin_d(true, true, a0, s3, s4),
           "8749b52f       amomin.d.aqrl a0, s4, (s3)");
   COMPARE(amomax_d(false, true, a0, s3, s4),
-          "a349b52f       amoswap.d.rl a0, s4, (s3)");
+          "a349b52f       amomax.d.rl a0, s4, (s3)");
   COMPARE(amominu_d(true, false, a0, s3, s4),
           "c549b52f       amominu.d.aq a0, s4, (s3)");
   COMPARE(amomaxu_d(false, true, a0, s3, s4),

@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-deopt --allow-natives-syntax --turboshaft-wasm
-// Flags: --experimental-wasm-inlining --liftoff
-// Flags: --turboshaft-wasm-instruction-selection-staged --no-jit-fuzzing
+// Flags: --wasm-deopt --allow-natives-syntax
+// Flags: --wasm-inlining --liftoff --no-jit-fuzzing
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -40,12 +39,12 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   %WasmTierUpFunction(wasm.main);
   // tierup.
   assertEquals(42, wasm.main(30, wasm.add));
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(wasm.main));
   }
   // Non-deopt call succeeded, now causing deopt.
   assertEquals(360, wasm.main(30, wasm.mul));
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertFalse(%IsTurboFanFunction(wasm.main));
   }
   // Deopt happened, executions are now in liftoff.
@@ -55,7 +54,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   // There is feedback for both targets, they do not trigger new deopts.
   assertEquals(360, wasm.main(30, wasm.mul));
   assertEquals(42, wasm.main(30, wasm.add));
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(wasm.main));
   }
 })();

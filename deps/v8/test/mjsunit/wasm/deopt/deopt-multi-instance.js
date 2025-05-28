@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 // Flags: --wasm-deopt --allow-natives-syntax --no-jit-fuzzing --liftoff
-// Flags: --turboshaft-wasm-instruction-selection-staged
 // Flags: --wasm-inlining-call-indirect
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
@@ -27,21 +26,21 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   instance.exports.main(instance.exports.callee_0);
   %WasmTierUpFunction(instance.exports.main);
   instance.exports.main(instance.exports.callee_0);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance.exports.main));
   }
 
   const instance2 = builder.instantiate({});
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance2.exports.main));
   }
   instance2.exports.main(instance.exports.callee_0);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertFalse(%IsTurboFanFunction(instance2.exports.main));
   }
   %WasmTierUpFunction(instance2.exports.main);
   instance2.exports.main(instance.exports.callee_0);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance2.exports.main));
   }
 })();
@@ -75,21 +74,21 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   instance.exports.main(0);
   %WasmTierUpFunction(instance.exports.main);
   instance.exports.main(0);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance.exports.main));
   }
 
   const instance2 = builder.instantiate({});
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance2.exports.main));
   }
   instance2.exports.main(1);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertFalse(%IsTurboFanFunction(instance2.exports.main));
   }
   %WasmTierUpFunction(instance2.exports.main);
   instance2.exports.main(1);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(instance2.exports.main));
   }
 })();

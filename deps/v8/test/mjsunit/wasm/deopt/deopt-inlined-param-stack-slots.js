@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-deopt --allow-natives-syntax --turboshaft-wasm --liftoff
-// Flags: --experimental-wasm-inlining --wasm-inlining-ignore-call-counts
-// Flags: --turboshaft-wasm-instruction-selection-staged --no-jit-fuzzing
+// Flags: --wasm-deopt --allow-natives-syntax --liftoff
+// Flags: --wasm-inlining --wasm-inlining-ignore-call-counts --no-jit-fuzzing
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -57,12 +56,12 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   %WasmTierUpFunction(wasm.main);
   // tierup.
   assertEquals(42, wasm.main(wasm.add));
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(wasm.main));
   }
   // deopt.
   assertEquals(360, wasm.main(wasm.mul));
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertFalse(%IsTurboFanFunction(wasm.main));
   }
 })();

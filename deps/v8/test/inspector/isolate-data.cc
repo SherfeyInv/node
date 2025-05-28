@@ -4,6 +4,9 @@
 
 #include "test/inspector/isolate-data.h"
 
+#include <optional>
+
+#include "include/libplatform/libplatform.h"
 #include "include/v8-context.h"
 #include "include/v8-exception.h"
 #include "include/v8-microtask-queue.h"
@@ -101,6 +104,10 @@ InspectorIsolateData::~InspectorIsolateData() {
   for (int session_id : session_ids_for_cleanup_) {
     ChannelHolder::RemoveChannel(session_id);
   }
+
+  // We don't care about completing pending per-isolate tasks, just delete
+  // them in case they still reference this Isolate.
+  v8::platform::NotifyIsolateShutdown(V8::GetCurrentPlatform(), isolate());
 }
 
 int InspectorIsolateData::CreateContextGroup() {
@@ -185,10 +192,10 @@ v8::MaybeLocal<v8::Module> InspectorIsolateData::ModuleResolveCallback(
   return maybe_module;
 }
 
-base::Optional<int> InspectorIsolateData::ConnectSession(
+std::optional<int> InspectorIsolateData::ConnectSession(
     int context_group_id, const v8_inspector::StringView& state,
     std::unique_ptr<FrontendChannelImpl> channel, bool is_fully_trusted) {
-  if (contexts_.find(context_group_id) == contexts_.end()) return base::nullopt;
+  if (contexts_.find(context_group_id) == contexts_.end()) return std::nullopt;
 
   v8::SealHandleScope seal_handle_scope(isolate());
   int session_id = ++last_session_id_;
@@ -196,7 +203,7 @@ base::Optional<int> InspectorIsolateData::ConnectSession(
   // inspector will already send notifications.
   auto* c = channel.get();
   ChannelHolder::AddChannel(session_id, std::move(channel));
-  sessions_[session_id] = inspector_->connect(
+  sessions_[session_id] = inspector_->connectShared(
       context_group_id, c, state,
       is_fully_trusted ? v8_inspector::V8Inspector::kFullyTrusted
                        : v8_inspector::V8Inspector::kUntrusted,

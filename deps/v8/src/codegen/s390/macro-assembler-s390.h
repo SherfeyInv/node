@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_CODEGEN_S390_MACRO_ASSEMBLER_S390_H_
+#define V8_CODEGEN_S390_MACRO_ASSEMBLER_S390_H_
+
 #ifndef INCLUDED_FROM_MACRO_ASSEMBLER_H
 #error This header must be included via macro-assembler.h
 #endif
-
-#ifndef V8_CODEGEN_S390_MACRO_ASSEMBLER_S390_H_
-#define V8_CODEGEN_S390_MACRO_ASSEMBLER_S390_H_
 
 #include "src/base/platform/platform.h"
 #include "src/codegen/bailout-reason.h"
@@ -128,6 +128,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void JumpIfCodeIsTurbofanned(Register code, Register scratch,
                                Label* if_turbofanned);
   void LoadMap(Register destination, Register object);
+  void LoadCompressedMap(Register destination, Register object);
 
   void LoadFeedbackVector(Register dst, Register closure, Register scratch,
                           Label* fbv_undef);
@@ -139,6 +140,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void Ret() { b(r14); }
   void Ret(Condition cond) { b(cond, r14); }
 
+  // TODO(olivf, 42204201) Rename this to AssertNotDeoptimized once
+  // non-leaptiering is removed from the codebase.
   void BailoutIfDeoptimized(Register scratch);
   void CallForDeoptimization(Builtin target, int deopt_id, Label* exit,
                              DeoptimizeKind kind, Label* ret,
@@ -156,10 +159,18 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
 
   void Call(Label* target);
 
+  void GetLabelAddress(Register dst, Label* target);
+
   // Load the builtin given by the Smi in |builtin_index| into |target|.
   void LoadEntryFromBuiltinIndex(Register builtin_index, Register target);
   void LoadEntryFromBuiltin(Builtin builtin, Register destination);
   MemOperand EntryFromBuiltinAsOperand(Builtin builtin);
+
+#ifdef V8_ENABLE_LEAPTIERING
+  void LoadEntrypointFromJSDispatchTable(Register destination,
+                                         Register dispatch_handle,
+                                         Register scratch);
+#endif  // V8_ENABLE_LEAPTIERING
 
   // Load the code entry point from the Code object.
   void LoadCodeInstructionStart(
@@ -625,18 +636,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void Not64(Register dst, Register src = no_reg);
   void NotP(Register dst, Register src = no_reg);
 
-#ifdef V8_TARGET_ARCH_S390X
   void Popcnt64(Register dst, Register src);
-#endif
 
   void mov(Register dst, const Operand& src);
   void mov(Register dst, Register src);
-
-  void CleanUInt32(Register x) {
-#ifdef V8_TARGET_ARCH_S390X
-    llgfr(x, x);
-#endif
-  }
 
   void push(DoubleRegister src) {
     lay(sp, MemOperand(sp, -kSystemPointerSize));
@@ -917,14 +920,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                    Simd128Register scratch);
   void SwapSimd128(MemOperand src, MemOperand dst, Simd128Register scratch);
 
-  // Cleanse pointer address on 31bit by zero out top  bit.
-  // This is a NOP on 64-bit.
-  void CleanseP(Register src) {
-#if (V8_HOST_ARCH_S390 && !(V8_TARGET_ARCH_S390X))
-    nilh(src, Operand(0x7FFF));
-#endif
-  }
-
   // ---------------------------------------------------------------------------
   // Runtime calls
 
@@ -1034,15 +1029,10 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
       else if (dst != src)  // If we didn't shift, we might need to copy
         mov(dst, src);
       int width = rangeStart - rangeEnd + 1;
-#if V8_TARGET_ARCH_S390X
       uint64_t mask = (static_cast<uint64_t>(1) << width) - 1;
       nihf(dst, Operand(mask >> 32));
       nilf(dst, Operand(mask & 0xFFFFFFFF));
       ltgr(dst, dst);
-#else
-      uint32_t mask = (1 << width) - 1;
-      AndP(dst, Operand(mask));
-#endif
     }
   }
 
@@ -1168,6 +1158,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void ComputeCodeStartAddress(Register dst);
   void LoadPC(Register dst);
 
+  // Enforce platform specific stack alignment.
+  void EnforceStackAlignment();
+
   // Control-flow integrity:
 
   // Define a function entrypoint. This doesn't emit any code for this
@@ -1179,9 +1172,19 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void BindExceptionHandler(Label* label) { bind(label); }
 
   // Convenience functions to call/jmp to the code of a JSFunction object.
-  void CallJSFunction(Register function_object);
+  void CallJSFunction(Register function_object, uint16_t argument_count);
   void JumpJSFunction(Register function_object,
                       JumpMode jump_mode = JumpMode::kJump);
+#ifdef V8_ENABLE_LEAPTIERING
+  void CallJSDispatchEntry(JSDispatchHandle dispatch_handle,
+                           uint16_t argument_count);
+#endif
+#ifdef V8_ENABLE_WEBASSEMBLY
+  void ResolveWasmCodePointer(Register target);
+  void CallWasmCodePointer(Register target,
+                           CallJumpMode call_jump_mode = CallJumpMode::kCall);
+  void LoadWasmCodePointer(Register dst, MemOperand src);
+#endif
 
   // Generates an instruction sequence s.t. the return address points to the
   // instruction following the call.
@@ -1540,7 +1543,8 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
                        const Register& scratch = no_reg);
   void LoadTaggedSignedField(Register destination, MemOperand field_operand);
   void LoadTaggedFieldWithoutDecompressing(const Register& destination,
-                                           const MemOperand& field_operand);
+                                           const MemOperand& field_operand,
+                                           const Register& scratch = no_reg);
 
   // Loads a field containing smi value and untags it.
   void SmiUntagField(Register dst, const MemOperand& src);
@@ -1549,6 +1553,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void StoreTaggedField(const Register& value,
                         const MemOperand& dst_field_operand,
                         const Register& scratch = no_reg);
+
+  void Zero(const MemOperand& dest);
+  void Zero(const MemOperand& dest1, const MemOperand& dest2);
 
   void DecompressTaggedSigned(Register destination, MemOperand field_operand);
   void DecompressTaggedSigned(Register destination, Register src);
@@ -1610,6 +1617,14 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
     LoadMap(map, heap_object);
     CompareInstanceType<use_unsigned_cmp>(map, temp, type);
   }
+  // Variant of the above, which compares against a type range rather than a
+  // single type (lower_limit and higher_limit are inclusive).
+  //
+  // Always use unsigned comparisons: ls for a positive result.
+  void CompareObjectTypeRange(Register heap_object, Register map,
+                              Register type_reg, Register scratch,
+                              InstanceType lower_limit,
+                              InstanceType higher_limit);
 
   // Compare instance type in a map.  map contains a valid map object whose
   // object type should be compared with the given type.  This both
@@ -1618,10 +1633,11 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   void CompareInstanceType(Register map, Register type_reg, InstanceType type) {
     static_assert(Map::kInstanceTypeOffset < 4096);
     static_assert(LAST_TYPE <= 0xFFFF);
-    LoadS16(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
     if (use_unsigned_cmp) {
+      LoadU16(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
       CmpU64(type_reg, Operand(type));
     } else {
+      LoadS16(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
       CmpS64(type_reg, Operand(type));
     }
   }
@@ -1631,7 +1647,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
   //
   // Always use unsigned comparisons: ls for a positive result.
   void CompareInstanceTypeRange(Register map, Register type_reg,
-                                InstanceType lower_limit,
+                                Register scratch, InstanceType lower_limit,
                                 InstanceType higher_limit);
 
   // Compare the object in a register to a value from the root list.
@@ -1676,9 +1692,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
 
   // Checks if value is in range [lower_limit, higher_limit] using a single
   // comparison.
-  void CompareRange(Register value, unsigned lower_limit,
+  void CompareRange(Register value, Register scratch, unsigned lower_limit,
                     unsigned higher_limit);
-  void JumpIfIsInRange(Register value, unsigned lower_limit,
+  void JumpIfIsInRange(Register value, Register scratch, unsigned lower_limit,
                        unsigned higher_limit, Label* on_in_range);
 
   // ---------------------------------------------------------------------------
@@ -1897,8 +1913,7 @@ class V8_EXPORT_PRIVATE MacroAssembler : public MacroAssemblerBase {
 
   // Helper functions for generating invokes.
   void InvokePrologue(Register expected_parameter_count,
-                      Register actual_parameter_count, Label* done,
-                      InvokeType type);
+                      Register actual_parameter_count, InvokeType type);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(MacroAssembler);
 };

@@ -14,10 +14,10 @@ namespace internal {
 namespace heap {
 
 namespace {
-Handle<NativeContext> GetNativeContext(Isolate* isolate,
-                                       v8::Local<v8::Context> v8_context) {
+DirectHandle<NativeContext> GetNativeContext(
+    Isolate* isolate, v8::Local<v8::Context> v8_context) {
   DirectHandle<Context> context = v8::Utils::OpenDirectHandle(*v8_context);
-  return handle(context->native_context(), isolate);
+  return direct_handle(context->native_context(), isolate);
 }
 }  // anonymous namespace
 
@@ -41,8 +41,8 @@ TEST(NativeContextInferrerJSFunction) {
   DirectHandle<NativeContext> native_context =
       GetNativeContext(isolate, env.local());
   v8::Local<v8::Value> result = CompileRun("(function () { return 1; })");
-  Handle<Object> object = Utils::OpenHandle(*result);
-  Handle<HeapObject> function = Cast<HeapObject>(object);
+  DirectHandle<Object> object = Utils::OpenDirectHandle(*result);
+  DirectHandle<HeapObject> function = Cast<HeapObject>(object);
   NativeContextInferrer inferrer;
   Address inferred_context = 0;
   CHECK(inferrer.Infer(isolate, function->map(), *function, &inferred_context));
@@ -56,8 +56,8 @@ TEST(NativeContextInferrerJSObject) {
   DirectHandle<NativeContext> native_context =
       GetNativeContext(isolate, env.local());
   v8::Local<v8::Value> result = CompileRun("({a : 10})");
-  Handle<Object> object = Utils::OpenHandle(*result);
-  Handle<HeapObject> function = Cast<HeapObject>(object);
+  DirectHandle<Object> object = Utils::OpenDirectHandle(*result);
+  DirectHandle<HeapObject> function = Cast<HeapObject>(object);
   NativeContextInferrer inferrer;
   Address inferred_context = 0;
   CHECK(inferrer.Infer(isolate, function->map(), *function, &inferred_context));
@@ -71,7 +71,8 @@ TEST(NativeContextStatsMerge) {
   DirectHandle<NativeContext> native_context =
       GetNativeContext(isolate, env.local());
   v8::Local<v8::Value> result = CompileRun("({a : 10})");
-  Handle<HeapObject> object = Cast<HeapObject>(Utils::OpenHandle(*result));
+  DirectHandle<HeapObject> object =
+      Cast<HeapObject>(Utils::OpenDirectHandle(*result));
   NativeContextStats stats1, stats2;
   stats1.IncrementSize(native_context->ptr(), object->map(), *object, 10);
   stats2.IncrementSize(native_context->ptr(), object->map(), *object, 20);
@@ -141,7 +142,7 @@ class MockPlatform : public TestPlatform {
   MockPlatform() : mock_task_runner_(new MockTaskRunner()) {}
 
   std::shared_ptr<v8::TaskRunner> GetForegroundTaskRunner(
-      v8::Isolate*) override {
+      v8::Isolate*, v8::TaskPriority priority) override {
     return mock_task_runner_;
   }
 
@@ -239,7 +240,7 @@ TEST(PartiallyInitializedJSFunction) {
   // 2. Set the context field to the uninitialized sentintel.
   TaggedField<Object, JSFunction::kContextOffset>::store(
       *js_function, Smi::uninitialized_deserialization_value());
-  // 3. Request memory meaurement and run all tasks. GC that runs as part
+  // 3. Request memory measurement and run all tasks. GC that runs as part
   // of the measurement should not crash.
   CcTest::isolate()->MeasureMemory(
       std::make_unique<MockMeasureMemoryDelegate>(),
@@ -259,7 +260,7 @@ TEST(PartiallyInitializedContext) {
   Factory* factory = isolate->factory();
   HandleScope scope(isolate);
   DirectHandle<ScopeInfo> scope_info =
-      ReadOnlyRoots(isolate).global_this_binding_scope_info_handle();
+      factory->global_this_binding_scope_info();
   DirectHandle<Context> context = factory->NewScriptContext(
       GetNativeContext(isolate, env.local()), scope_info);
   DirectHandle<Map> map(context->map(), isolate);
@@ -269,7 +270,7 @@ TEST(PartiallyInitializedContext) {
   // 2. Set the native context field to the uninitialized sentintel.
   TaggedField<Object, Map::kConstructorOrBackPointerOrNativeContextOffset>::
       store(*map, Smi::uninitialized_deserialization_value());
-  // 3. Request memory meaurement and run all tasks. GC that runs as part
+  // 3. Request memory measurement and run all tasks. GC that runs as part
   // of the measurement should not crash.
   CcTest::isolate()->MeasureMemory(
       std::make_unique<MockMeasureMemoryDelegate>(),

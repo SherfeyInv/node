@@ -22,8 +22,8 @@ void Compare(DirectHandle<BigInt> x, double value, ComparisonResult expected) {
   CHECK_EQ(expected, BigInt::CompareToDouble(x, value));
 }
 
-Handle<BigInt> NewFromInt(Isolate* isolate, int value) {
-  Handle<Smi> smi_value = handle(Smi::FromInt(value), isolate);
+DirectHandle<BigInt> NewFromInt(Isolate* isolate, int value) {
+  DirectHandle<Smi> smi_value(Smi::FromInt(value), isolate);
   return BigInt::FromNumber(isolate, smi_value).ToHandleChecked();
 }
 
@@ -69,14 +69,14 @@ TEST_F(BigIntWithIsolate, CompareToDouble) {
 
   // Same bit length, difference in first digit.
   double big_double = 4428155326412785451008.0;
-  Handle<BigInt> big =
+  DirectHandle<BigInt> big =
       BigIntLiteral(isolate(), "0xF10D00000000000000").ToHandleChecked();
   Compare(big, big_double, ComparisonResult::kGreaterThan);
   big = BigIntLiteral(isolate(), "0xE00D00000000000000").ToHandleChecked();
   Compare(big, big_double, ComparisonResult::kLessThan);
 
   double other_double = -13758438578910658560.0;
-  Handle<BigInt> other =
+  DirectHandle<BigInt> other =
       BigIntLiteral(isolate(), "-0xBEEFC1FE00000000").ToHandleChecked();
   Compare(other, other_double, ComparisonResult::kGreaterThan);
   other = BigIntLiteral(isolate(), "-0xBEEFCBFE00000000").ToHandleChecked();

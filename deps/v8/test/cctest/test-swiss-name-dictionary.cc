@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <optional>
+
 #include "src/objects/swiss-name-dictionary-inl.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/test-swiss-name-dictionary-infra.h"
@@ -37,12 +39,12 @@ class RuntimeTestRunner {
   // Retrieves data associated with |entry|, which must be an index pointing to
   // an existing entry. The returned array contains key, value, property details
   // in that order.
-  Handle<FixedArray> GetData(InternalIndex entry);
+  DirectHandle<FixedArray> GetData(InternalIndex entry);
 
   // Tests that the current table has the given capacity, and number of
   // (deleted) elements, based on which optional values are present.
-  void CheckCounts(base::Optional<int> capacity, base::Optional<int> elements,
-                   base::Optional<int> deleted);
+  void CheckCounts(std::optional<int> capacity, std::optional<int> elements,
+                   std::optional<int> deleted);
   // Checks that |expected_keys| contains exactly the keys in the current table,
   // in the given order.
   void CheckEnumerationOrder(const std::vector<std::string>& expected_keys);
@@ -52,7 +54,7 @@ class RuntimeTestRunner {
   // Just for debugging.
   void PrintTable();
 
-  Handle<SwissNameDictionary> table;
+  DirectHandle<SwissNameDictionary> table;
 
  private:
   Isolate* isolate_;
@@ -61,7 +63,7 @@ class RuntimeTestRunner {
 
 void RuntimeTestRunner::Add(DirectHandle<Name> key, DirectHandle<Object> value,
                             PropertyDetails details) {
-  Handle<SwissNameDictionary> updated_table =
+  DirectHandle<SwissNameDictionary> updated_table =
       SwissNameDictionary::Add(isolate_, this->table, key, value, details);
   this->table = updated_table;
 }
@@ -70,15 +72,15 @@ InternalIndex RuntimeTestRunner::FindEntry(DirectHandle<Name> key) {
   return table->FindEntry(isolate_, key);
 }
 
-Handle<FixedArray> RuntimeTestRunner::GetData(InternalIndex entry) {
+DirectHandle<FixedArray> RuntimeTestRunner::GetData(InternalIndex entry) {
   if (entry.is_found()) {
-    Handle<FixedArray> data = isolate_->factory()->NewFixedArray(3);
+    DirectHandle<FixedArray> data = isolate_->factory()->NewFixedArray(3);
     data->set(0, table->KeyAt(entry));
     data->set(1, table->ValueAt(entry));
     data->set(2, table->DetailsAt(entry).AsSmi());
     return data;
   } else {
-    return handle(ReadOnlyRoots(isolate_).empty_fixed_array(), isolate_);
+    return direct_handle(ReadOnlyRoots(isolate_).empty_fixed_array(), isolate_);
   }
 }
 
@@ -95,9 +97,9 @@ void RuntimeTestRunner::Delete(InternalIndex entry) {
   table = table->DeleteEntry(isolate_, table, entry);
 }
 
-void RuntimeTestRunner::CheckCounts(base::Optional<int> capacity,
-                                    base::Optional<int> elements,
-                                    base::Optional<int> deleted) {
+void RuntimeTestRunner::CheckCounts(std::optional<int> capacity,
+                                    std::optional<int> elements,
+                                    std::optional<int> deleted) {
   if (capacity.has_value()) {
     CHECK_EQ(capacity.value(), table->Capacity());
   }

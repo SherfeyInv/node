@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-deopt --allow-natives-syntax --turboshaft-wasm
-// Flags: --experimental-wasm-inlining --liftoff
-// Flags: --turboshaft-wasm-instruction-selection-staged
+// Flags: --wasm-deopt --allow-natives-syntax
+// Flags: --wasm-inlining --liftoff
 // Flags: --wasm-tiering-budget=1000 --wasm-dynamic-tiering
 // Flags: --no-predictable
 
@@ -56,7 +55,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   // queued in the background that re-trigger new deopts with the wasm.mul
   // target. Therefore we can't assert that the deopt count is still 1.
   assertTrue(initialDeoptCount + %WasmDeoptsExecutedCount() < 20);
-  if (%IsolateCountForTesting() == 1) {
+  if (%IsWasmTieringPredictable()) {
     assertTrue(%IsTurboFanFunction(wasm.main));
   }
   assertEquals(42, wasm.main(12, 30, wasm.add));

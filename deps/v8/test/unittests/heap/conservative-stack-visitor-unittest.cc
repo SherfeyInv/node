@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/heap/conservative-stack-visitor.h"
+#include "src/heap/conservative-stack-visitor-inl.h"
 
 #include "src/codegen/assembler-inl.h"
 #include "test/unittests/heap/heap-utils.h"
@@ -17,19 +17,22 @@ namespace {
 enum : int {
   kRegularObject = 0,
   kCodeObject = 1,
+  kTrustedObject = 2,
   kNumberOfObjects
 };
 // clang-format on
 
 class RecordingVisitor final : public RootVisitor {
  public:
-  V8_NOINLINE explicit RecordingVisitor(Isolate* isolate) {
+  V8_NOINLINE explicit RecordingVisitor(Isolate* isolate)
+      : rng_(isolate->random_number_generator()) {
     HandleScope scope(isolate);
     // Allocate some regular object.
-    the_object_[kRegularObject] =
-        *isolate->factory()->NewFixedArray(256, AllocationType::kOld);
+    the_object_[kRegularObject] = AllocateRegularObject(isolate, kSize);
     // Allocate a code object.
-    the_object_[kCodeObject] = AllocateCodeObject(isolate, 256);
+    the_object_[kCodeObject] = AllocateCodeObject(isolate, kSize);
+    // Allocate a trusted object.
+    the_object_[kTrustedObject] = AllocateTrustedObject(isolate, kSize);
     // Mark the objects as not found;
     for (int i = 0; i < kNumberOfObjects; ++i) found_[i] = false;
   }
@@ -51,7 +54,10 @@ class RecordingVisitor final : public RootVisitor {
   Address base_address(int index) const { return the_object(index).address(); }
   Address tagged_address(int index) const { return the_object(index).ptr(); }
   Address inner_address(int index) const {
-    return base_address(index) + 42 * kTaggedSize;
+    int offset = 1 + rng_->NextInt(kMaxInnerPointerOffset);
+    DCHECK_LE(0, offset);
+    DCHECK_LE(offset, kMaxInnerPointerOffset);
+    return base_address(index) + offset;
   }
 #ifdef V8_COMPRESS_POINTERS
   uint32_t compr_address(int index) const {
@@ -65,14 +71,24 @@ class RecordingVisitor final : public RootVisitor {
 #endif
 
  private:
+  static constexpr int kSize = 256;
+  static constexpr int kMaxInnerPointerOffset = 17 * kTaggedSize;
+  // The code object's size is `kObjectSize` bytes and the maximum offset for
+  // inner pointers should fall inside.
+  static_assert(kMaxInnerPointerOffset < kSize);
+
   Tagged<HeapObject> the_object(int index) const {
     DCHECK_LE(0, index);
     DCHECK_LT(index, kNumberOfObjects);
     return the_object_[index];
   }
 
+  Tagged<FixedArray> AllocateRegularObject(Isolate* isolate, int size) {
+    return *isolate->factory()->NewFixedArray(size, AllocationType::kOld);
+  }
+
   Tagged<InstructionStream> AllocateCodeObject(Isolate* isolate, int size) {
-    Assembler assm(AssemblerOptions{});
+    Assembler assm(isolate->allocator(), AssemblerOptions{});
 
     for (int i = 0; i < size; ++i)
       assm.nop();  // supported on all architectures
@@ -83,6 +99,12 @@ class RecordingVisitor final : public RootVisitor {
         *Factory::CodeBuilder(isolate, desc, CodeKind::FOR_TESTING).Build();
     return code->instruction_stream();
   }
+
+  Tagged<TrustedFixedArray> AllocateTrustedObject(Isolate* isolate, int size) {
+    return *isolate->factory()->NewTrustedFixedArray(size);
+  }
+
+  base::RandomNumberGenerator* rng_;
 
   // Some heap objects that we want to check if they are visited or not.
   Tagged<HeapObject> the_object_[kNumberOfObjects];
@@ -113,6 +135,7 @@ TEST_F(ConservativeStackVisitorTest, DirectBasePointer) {
   {
     volatile Address regular_ptr = recorder->base_address(kRegularObject);
     volatile Address code_ptr = recorder->base_address(kCodeObject);
+    volatile Address trusted_ptr = recorder->base_address(kTrustedObject);
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -120,11 +143,13 @@ TEST_F(ConservativeStackVisitorTest, DirectBasePointer) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(kNullAddress, regular_ptr);
     EXPECT_NE(kNullAddress, code_ptr);
+    EXPECT_NE(kNullAddress, trusted_ptr);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 TEST_F(ConservativeStackVisitorTest, TaggedBasePointer) {
@@ -137,6 +162,7 @@ TEST_F(ConservativeStackVisitorTest, TaggedBasePointer) {
   {
     volatile Address regular_ptr = recorder->tagged_address(kRegularObject);
     volatile Address code_ptr = recorder->tagged_address(kCodeObject);
+    volatile Address trusted_ptr = recorder->tagged_address(kTrustedObject);
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -144,11 +170,13 @@ TEST_F(ConservativeStackVisitorTest, TaggedBasePointer) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(kNullAddress, regular_ptr);
     EXPECT_NE(kNullAddress, code_ptr);
+    EXPECT_NE(kNullAddress, trusted_ptr);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 TEST_F(ConservativeStackVisitorTest, InnerPointer) {
@@ -161,6 +189,7 @@ TEST_F(ConservativeStackVisitorTest, InnerPointer) {
   {
     volatile Address regular_ptr = recorder->inner_address(kRegularObject);
     volatile Address code_ptr = recorder->inner_address(kCodeObject);
+    volatile Address trusted_ptr = recorder->inner_address(kTrustedObject);
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -168,11 +197,13 @@ TEST_F(ConservativeStackVisitorTest, InnerPointer) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(kNullAddress, regular_ptr);
     EXPECT_NE(kNullAddress, code_ptr);
+    EXPECT_NE(kNullAddress, trusted_ptr);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 #ifdef V8_COMPRESS_POINTERS
@@ -188,6 +219,8 @@ TEST_F(ConservativeStackVisitorTest, HalfWord1) {
     volatile uint32_t regular_ptr[] = {recorder->compr_address(kRegularObject),
                                        0};
     volatile uint32_t code_ptr[] = {recorder->compr_address(kCodeObject), 0};
+    volatile uint32_t trusted_ptr[] = {recorder->compr_address(kTrustedObject),
+                                       0};
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -195,11 +228,13 @@ TEST_F(ConservativeStackVisitorTest, HalfWord1) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(static_cast<uint32_t>(0), regular_ptr[0]);
     EXPECT_NE(static_cast<uint32_t>(0), code_ptr[0]);
+    EXPECT_NE(static_cast<uint32_t>(0), trusted_ptr[0]);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 TEST_F(ConservativeStackVisitorTest, HalfWord2) {
@@ -213,6 +248,8 @@ TEST_F(ConservativeStackVisitorTest, HalfWord2) {
     volatile uint32_t regular_ptr[] = {0,
                                        recorder->compr_address(kRegularObject)};
     volatile uint32_t code_ptr[] = {0, recorder->compr_address(kCodeObject)};
+    volatile uint32_t trusted_ptr[] = {0,
+                                       recorder->compr_address(kTrustedObject)};
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -220,11 +257,13 @@ TEST_F(ConservativeStackVisitorTest, HalfWord2) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(static_cast<uint32_t>(0), regular_ptr[1]);
     EXPECT_NE(static_cast<uint32_t>(0), code_ptr[1]);
+    EXPECT_NE(static_cast<uint32_t>(0), trusted_ptr[1]);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 TEST_F(ConservativeStackVisitorTest, InnerHalfWord1) {
@@ -238,6 +277,8 @@ TEST_F(ConservativeStackVisitorTest, InnerHalfWord1) {
     volatile uint32_t regular_ptr[] = {recorder->compr_inner(kRegularObject),
                                        0};
     volatile uint32_t code_ptr[] = {recorder->compr_inner(kCodeObject), 0};
+    volatile uint32_t trusted_ptr[] = {recorder->compr_inner(kTrustedObject),
+                                       0};
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -245,11 +286,13 @@ TEST_F(ConservativeStackVisitorTest, InnerHalfWord1) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(static_cast<uint32_t>(0), regular_ptr[0]);
     EXPECT_NE(static_cast<uint32_t>(0), code_ptr[0]);
+    EXPECT_NE(static_cast<uint32_t>(0), trusted_ptr[0]);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 TEST_F(ConservativeStackVisitorTest, InnerHalfWord2) {
@@ -263,6 +306,8 @@ TEST_F(ConservativeStackVisitorTest, InnerHalfWord2) {
     volatile uint32_t regular_ptr[] = {0,
                                        recorder->compr_inner(kRegularObject)};
     volatile uint32_t code_ptr[] = {0, recorder->compr_inner(kCodeObject)};
+    volatile uint32_t trusted_ptr[] = {0,
+                                       recorder->compr_inner(kTrustedObject)};
 
     ConservativeStackVisitor stack_visitor(isolate(), recorder.get());
     heap()->stack().IteratePointersForTesting(&stack_visitor);
@@ -270,11 +315,13 @@ TEST_F(ConservativeStackVisitorTest, InnerHalfWord2) {
     // Make sure to keep the pointers alive.
     EXPECT_NE(static_cast<uint32_t>(0), regular_ptr[1]);
     EXPECT_NE(static_cast<uint32_t>(0), code_ptr[1]);
+    EXPECT_NE(static_cast<uint32_t>(0), trusted_ptr[1]);
   }
 
   // The objects should have been visited.
   EXPECT_TRUE(recorder->found(kRegularObject));
   EXPECT_TRUE(recorder->found(kCodeObject));
+  EXPECT_TRUE(recorder->found(kTrustedObject));
 }
 
 #endif  // V8_COMPRESS_POINTERS

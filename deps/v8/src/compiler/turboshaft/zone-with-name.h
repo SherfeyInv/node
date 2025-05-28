@@ -39,10 +39,22 @@ class ZoneWithNamePointerImpl final {
 
   ZoneWithNamePointerImpl(const ZoneWithNamePointerImpl&) V8_NOEXCEPT = default;
   ZoneWithNamePointerImpl(ZoneWithNamePointerImpl&&) V8_NOEXCEPT = default;
+  template <typename U>
+  ZoneWithNamePointerImpl(const ZoneWithNamePointerImpl<U, Name>& other)
+      V8_NOEXCEPT  // NOLINT(runtime/explicit)
+    requires(std::is_convertible_v<U*, pointer_type>)
+      : ptr_(static_cast<U*>(other)) {}
   ZoneWithNamePointerImpl& operator=(const ZoneWithNamePointerImpl&)
       V8_NOEXCEPT = default;
   ZoneWithNamePointerImpl& operator=(ZoneWithNamePointerImpl&&)
       V8_NOEXCEPT = default;
+  template <typename U>
+  ZoneWithNamePointerImpl& operator=(
+      const ZoneWithNamePointerImpl<U, Name>& other) V8_NOEXCEPT
+    requires(std::is_convertible_v<U*, pointer_type>)
+  {
+    ptr_ = static_cast<U*>(other);
+  }
 
   operator pointer_type() const { return get(); }  // NOLINT(runtime/explicit)
   T& operator*() const { return *get(); }
@@ -89,6 +101,12 @@ class ZoneWithName final {
   ZoneWithNamePointer<T, Name> New(Args&&... args) {
     return ZoneWithNamePointer<T, Name>{
         get()->template New<T>(std::forward<Args>(args)...)};
+  }
+
+  template <typename T>
+  ZoneWithNamePointer<T, Name> AllocateArray(size_t length) {
+    return ZoneWithNamePointer<T, Name>{
+        get()->template AllocateArray<T>(length)};
   }
 
   Zone* get() { return scope_.zone(); }

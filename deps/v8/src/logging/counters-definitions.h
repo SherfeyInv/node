@@ -48,16 +48,19 @@ namespace internal {
   HR(wasm_compile_huge_function_peak_memory_bytes,                             \
      V8.WasmCompileHugeFunctionPeakMemoryBytes, 1, GB, 51)                     \
   HR(asm_module_size_bytes, V8.AsmModuleSizeBytes, 1, GB, 51)                  \
-  HR(compile_script_cache_behaviour, V8.CompileScript.CacheBehaviour, 0, 20,   \
-     21)                                                                       \
+  HR(compile_script_cache_behaviour, V8.CompileScript.CacheBehaviour, 0, 21,   \
+     22)                                                                       \
   HR(wasm_memory_allocation_result, V8.WasmMemoryAllocationResult, 0, 3, 4)    \
   /* Committed code size per module, collected on GC. */                       \
   /* Older histogram, in MiB (0..1024MB). */                                   \
   HR(wasm_module_code_size_mb, V8.WasmModuleCodeSizeMiB, 0, 1024, 64)          \
   /* Newer histogram, in KiB (0..100MB). */                                    \
   HR(wasm_module_code_size_kb, V8.WasmModuleCodeSizeKiB, 0, 1024 * 100, 101)   \
-  /* Meta data size per module, collected on GC. */                            \
+  /* Metadata size per module, collected on GC. */                             \
   HR(wasm_module_metadata_size_kb, V8.WasmModuleMetadataSizeKiB, 0,            \
+     1024 * 100, 101)                                                          \
+  /* Metadata of the whole Wasm engine, collected on GC. */                    \
+  HR(wasm_engine_metadata_size_kb, V8.WasmEngineMetadataSizeKiB, 0,            \
      1024 * 100, 101)                                                          \
   /* Percent of freed code size per module, collected on GC. */                \
   HR(wasm_module_freed_code_size_percent, V8.WasmModuleCodeSizePercentFreed,   \
@@ -113,6 +116,18 @@ namespace internal {
      V8.ExternalPointerTableCompactionOutcome, 0, 2, 3)                        \
   HR(wasm_compilation_method, V8.WasmCompilationMethod, 0, 4, 5)               \
   HR(asmjs_instantiate_result, V8.AsmjsInstantiateResult, 0, 1, 2)
+
+#if V8_ENABLE_DRUMBRAKE
+#define HISTOGRAM_RANGE_LIST_SLOW(HR)                                         \
+  /* Percentage (*1000) of time spent running Wasm jitted code. */            \
+  HR(wasm_jit_execution_ratio, V8.JitWasmExecutionPercentage, 0, 100000, 101) \
+  HR(wasm_jit_execution_too_slow, V8.JitWasmExecutionTooSlow, 0, 100000, 101) \
+  /* Percentage (*1000) of time spent running in the Wasm interpreter. */     \
+  HR(wasm_jitless_execution_ratio, V8.JitlessWasmExecutionPercentage, 0,      \
+     100000, 101)                                                             \
+  HR(wasm_jitless_execution_too_slow, V8.JitlessWasmExecutionTooSlow, 0,      \
+     100000, 101)
+#endif  // V8_ENABLE_DRUMBRAKE
 
 // Like TIMED_HISTOGRAM_LIST, but allows the use of NestedTimedHistogramScope.
 // HT(name, caption, max, unit)
@@ -368,6 +383,7 @@ namespace internal {
   SC(lo_space_bytes_used, V8.MemoryLoSpaceBytesUsed)                           \
   SC(wasm_generated_code_size, V8.WasmGeneratedCodeBytes)                      \
   SC(wasm_reloc_size, V8.WasmRelocBytes)                                       \
+  SC(wasm_deopt_data_size, V8.WasmDeoptDataBytes)                              \
   SC(wasm_lazily_compiled_functions, V8.WasmLazilyCompiledFunctions)           \
   SC(wasm_compiled_export_wrapper, V8.WasmCompiledExportWrappers)
 

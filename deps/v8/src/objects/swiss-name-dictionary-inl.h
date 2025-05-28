@@ -5,25 +5,27 @@
 #ifndef V8_OBJECTS_SWISS_NAME_DICTIONARY_INL_H_
 #define V8_OBJECTS_SWISS_NAME_DICTIONARY_INL_H_
 
+#include "src/objects/swiss-name-dictionary.h"
+// Include the non-inl header before the rest of the headers.
+
 #include <algorithm>
+#include <optional>
 
 #include "src/base/macros.h"
-#include "src/base/optional.h"
 #include "src/execution/isolate-utils-inl.h"
 #include "src/heap/heap.h"
 #include "src/objects/fixed-array-inl.h"
+#include "src/objects/fixed-array.h"
 #include "src/objects/instance-type-inl.h"
 #include "src/objects/js-collection-iterator.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/slots-inl.h"
 #include "src/objects/smi.h"
-#include "src/objects/swiss-name-dictionary.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
-namespace v8 {
-namespace internal {
+namespace v8::internal {
 
 #include "torque-generated/src/objects/swiss-name-dictionary-tq-inl.inc"
 
@@ -308,7 +310,7 @@ Tagged<Object> SwissNameDictionary::ValueAt(InternalIndex entry) {
   return ValueAtRaw(entry.as_int());
 }
 
-base::Optional<Tagged<Object>> SwissNameDictionary::TryValueAt(
+std::optional<Tagged<Object>> SwissNameDictionary::TryValueAt(
     InternalIndex entry) {
 #if DEBUG
   Isolate* isolate;
@@ -338,9 +340,11 @@ PropertyDetails SwissNameDictionary::DetailsAt(InternalIndex entry) {
 }
 
 // static
-template <typename IsolateT>
-Handle<SwissNameDictionary> SwissNameDictionary::EnsureGrowable(
-    IsolateT* isolate, Handle<SwissNameDictionary> table) {
+template <typename IsolateT, template <typename> typename HandleType>
+  requires(std::is_convertible_v<HandleType<SwissNameDictionary>,
+                                 DirectHandle<SwissNameDictionary>>)
+HandleType<SwissNameDictionary> SwissNameDictionary::EnsureGrowable(
+    IsolateT* isolate, HandleType<SwissNameDictionary> table) {
   int capacity = table->Capacity();
 
   if (table->UsedCapacity() < MaxUsableCapacity(capacity)) {
@@ -507,14 +511,17 @@ bool SwissNameDictionary::ToKey(ReadOnlyRoots roots, InternalIndex entry,
 }
 
 // static
-template <typename IsolateT>
-Handle<SwissNameDictionary> SwissNameDictionary::Add(
-    IsolateT* isolate, Handle<SwissNameDictionary> original_table,
+template <typename IsolateT, template <typename> typename HandleType>
+  requires(std::is_convertible_v<HandleType<SwissNameDictionary>,
+                                 DirectHandle<SwissNameDictionary>>)
+HandleType<SwissNameDictionary> SwissNameDictionary::Add(
+    IsolateT* isolate, HandleType<SwissNameDictionary> original_table,
     DirectHandle<Name> key, DirectHandle<Object> value, PropertyDetails details,
     InternalIndex* entry_out) {
   DCHECK(original_table->FindEntry(isolate, *key).is_not_found());
 
-  Handle<SwissNameDictionary> table = EnsureGrowable(isolate, original_table);
+  HandleType<SwissNameDictionary> table =
+      EnsureGrowable(isolate, original_table);
   DisallowGarbageCollection no_gc;
   Tagged<SwissNameDictionary> raw_table = *table;
   int nof = raw_table->NumberOfElements();
@@ -542,7 +549,7 @@ int SwissNameDictionary::AddInternal(Tagged<Name> key, Tagged<Object> value,
 
   uint32_t hash = key->hash();
 
-  // For now we don't re-use deleted buckets (due to enumeration table
+  // For now we don't reuse deleted buckets (due to enumeration table
   // complications), which is why we only look for empty buckets here, not
   // deleted ones.
   int target = FindFirstEmpty(hash);
@@ -583,7 +590,7 @@ void SwissNameDictionary::Initialize(IsolateT* isolate,
 }
 
 SwissNameDictionary::IndexIterator::IndexIterator(
-    Handle<SwissNameDictionary> dict, int start)
+    DirectHandle<SwissNameDictionary> dict, int start)
     : enum_index_{start}, dict_{dict} {
   if (dict.is_null()) {
     used_capacity_ = 0;
@@ -622,7 +629,7 @@ InternalIndex SwissNameDictionary::IndexIterator::operator*() {
 }
 
 SwissNameDictionary::IndexIterable::IndexIterable(
-    Handle<SwissNameDictionary> dict)
+    DirectHandle<SwissNameDictionary> dict)
     : dict_{dict} {}
 
 SwissNameDictionary::IndexIterator SwissNameDictionary::IndexIterable::begin() {
@@ -643,17 +650,17 @@ SwissNameDictionary::IterateEntriesOrdered() {
   // If we are supposed to iterate the empty dictionary (which is non-writable),
   // we have no simple way to get the isolate, which we would need to create a
   // handle.
-  // TODO(emrich): Consider always using roots.empty_swiss_dictionary_handle()
+  // TODO(emrich): Consider always using roots.empty_swiss_dictionary()
   // in the condition once this function gets Isolate as a parameter in order to
   // avoid empty dict checks.
   if (Capacity() == 0) {
-    return IndexIterable(Handle<SwissNameDictionary>::null());
+    return IndexIterable(DirectHandle<SwissNameDictionary>::null());
   }
 
   Isolate* isolate;
   GetIsolateFromHeapObject(*this, &isolate);
   DCHECK_NE(isolate, nullptr);
-  return IndexIterable(handle(*this, isolate));
+  return IndexIterable(direct_handle(*this, isolate));
 }
 
 SwissNameDictionary::IndexIterable SwissNameDictionary::IterateEntries() {
@@ -665,28 +672,6 @@ void SwissNameDictionary::SetHash(int32_t hash) {
 }
 
 int SwissNameDictionary::Hash() { return ReadField<int32_t>(PrefixOffset()); }
-
-// static
-constexpr int SwissNameDictionary::MaxCapacity() {
-  int const_size =
-      DataTableStartOffset() + ByteArray::kHeaderSize +
-      // Size for present and deleted element count at max capacity:
-      2 * sizeof(uint32_t);
-  int per_entry_size =
-      // size of data table entries:
-      kDataTableEntryCount * kTaggedSize +
-      // ctrl table entry size:
-      kOneByteSize +
-      // PropertyDetails table entry size:
-      kOneByteSize +
-      // Enumeration table entry size at maximum capacity:
-      sizeof(uint32_t);
-
-  int result = (FixedArrayBase::kMaxSize - const_size) / per_entry_size;
-  DCHECK_GE(Smi::kMaxValue, result);
-
-  return result;
-}
 
 // static
 constexpr int SwissNameDictionary::PrefixOffset() {
@@ -725,6 +710,29 @@ constexpr int SwissNameDictionary::PropertyDetailsTableStartOffset(
 }
 
 // static
+constexpr int SwissNameDictionary::MaxCapacity() {
+  constexpr int kConstSize =
+      SwissNameDictionary::DataTableStartOffset() + sizeof(ByteArray::Header) +
+      // Size for present and deleted element count at max capacity:
+      2 * sizeof(uint32_t);
+  constexpr int kPerEntrySize =
+      // size of data table entries:
+      kDataTableEntryCount * kTaggedSize +
+      // ctrl table entry size:
+      kOneByteSize +
+      // PropertyDetails table entry size:
+      kOneByteSize +
+      // Enumeration table entry size at maximum capacity:
+      sizeof(uint32_t);
+
+  constexpr int result =
+      (kMaxFixedArrayCapacity * kTaggedSize - kConstSize) / kPerEntrySize;
+  static_assert(Smi::kMaxValue >= result);
+
+  return result;
+}
+
+// static
 bool SwissNameDictionary::IsEmpty(ctrl_t c) { return c == Ctrl::kEmpty; }
 
 // static
@@ -760,8 +768,7 @@ ACCESSORS_CHECKED2(SwissNameDictionary, meta_table, Tagged<ByteArray>,
                    MetaTablePointerOffset(), true,
                    value->length() >= kMetaTableEnumerationDataStartIndex)
 
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal
 
 #include "src/objects/object-macros-undef.h"
 

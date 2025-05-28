@@ -70,6 +70,11 @@ class BodyDescriptorBase {
   template <typename ObjectVisitor>
   static inline void IterateProtectedPointer(Tagged<HeapObject> obj, int offset,
                                              ObjectVisitor* v);
+#ifdef V8_ENABLE_LEAPTIERING
+  template <typename ObjectVisitor>
+  static inline void IterateJSDispatchEntry(Tagged<HeapObject> obj, int offset,
+                                            ObjectVisitor* v);
+#endif  // V8_ENABLE_LEAPTIERING
 
  protected:
   // Returns true for all header and embedder fields.
@@ -285,7 +290,7 @@ using WithStrongCodePointer =
     WithStrongTrustedPointer<kFieldOffset, kCodeIndirectPointerTag>;
 
 // A mix-in for visiting an external pointer field.
-template <size_t kFieldOffset, ExternalPointerTag kTag>
+template <size_t kFieldOffset, ExternalPointerTagRange kTagRange>
 struct WithExternalPointer {
   template <typename Base>
   class BodyDescriptor : public Base {
@@ -294,8 +299,8 @@ struct WithExternalPointer {
     static inline void IterateBody(Tagged<Map> map, Tagged<HeapObject> obj,
                                    int object_size, ObjectVisitor* v) {
       Base::IterateBody(map, obj, object_size, v);
-      v->VisitExternalPointer(obj,
-                              obj->RawExternalPointerField(kFieldOffset, kTag));
+      v->VisitExternalPointer(
+          obj, obj->RawExternalPointerField(kFieldOffset, kTagRange));
     }
   };
 };

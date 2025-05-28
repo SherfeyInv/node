@@ -2,8 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --wasm-deopt --turboshaft-wasm
-// Flags: --turboshaft-future --liftoff --no-jit-fuzzing
+// Flags: --allow-natives-syntax --wasm-deopt --liftoff --no-jit-fuzzing
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -32,7 +31,7 @@ assertEquals(-457571083, instance.exports.main(instance.exports.getS));
 %WasmTierUpFunction(instance.exports.main);
 // Test value produced by DeoptimizerLiteral constant.
 assertEquals(1689912565, instance.exports.main(instance.exports.getU));
-if (%IsolateCountForTesting() == 1) {
+if (%IsWasmTieringPredictable()) {
   assertFalse(%IsTurboFanFunction(instance.exports.main));
 }
 // Test value produced by Liftoff.
@@ -40,6 +39,6 @@ assertEquals(1689912565, instance.exports.main(instance.exports.getU));
 %WasmTierUpFunction(instance.exports.main);
 // Test value produced by Turboshaft.
 assertEquals(1689912565, instance.exports.main(instance.exports.getU));
-if (%IsolateCountForTesting() == 1) {
+if (%IsWasmTieringPredictable()) {
   assertTrue(%IsTurboFanFunction(instance.exports.main));
 }

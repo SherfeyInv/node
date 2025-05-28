@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef V8_BASE_PLATFORM_PLATFORM_H_
+#define V8_BASE_PLATFORM_PLATFORM_H_
+
 // This module contains the platform-specific code. This make the rest of the
 // code less dependent on operating system, compilers and runtime libraries.
 // This module does specifically not deal with differences between different
@@ -18,11 +21,9 @@
 // implementation and the overhead of virtual methods for performance
 // sensitive like mutex locking/unlocking.
 
-#ifndef V8_BASE_PLATFORM_PLATFORM_H_
-#define V8_BASE_PLATFORM_PLATFORM_H_
-
 #include <cstdarg>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,8 +33,6 @@
 #include "src/base/build_config.h"
 #include "src/base/compiler-specific.h"
 #include "src/base/macros.h"
-#include "src/base/optional.h"
-#include "src/base/platform/mutex.h"
 #include "src/base/platform/semaphore.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"  // nogncheck
 
@@ -63,6 +62,12 @@
 extern "C" unsigned long __readfsdword(unsigned long);  // NOLINT(runtime/int)
 #endif                                       // V8_CC_MSVC && V8_HOST_ARCH_IA32
 #endif                                       // V8_NO_FAST_TLS
+
+#if V8_OS_OPENBSD
+#define PERMISSION_MUTABLE_SECTION __attribute__((section(".openbsd.mutable")))
+#else
+#define PERMISSION_MUTABLE_SECTION
+#endif
 
 namespace heap::base {
 class Stack;
@@ -326,7 +331,7 @@ class V8_BASE_EXPORT OS {
   // Whether the platform supports mapping a given address in another location
   // in the address space.
   V8_WARN_UNUSED_RESULT static constexpr bool IsRemapPageSupported() {
-#if (defined(V8_OS_DARWIN) || defined(V8_OS_LINUX)) && \
+#if (defined(V8_OS_MACOS) || defined(V8_OS_LINUX)) && \
     !(defined(V8_TARGET_ARCH_PPC64) || defined(V8_TARGET_ARCH_S390X))
     return true;
 #else
@@ -353,6 +358,8 @@ class V8_BASE_EXPORT OS {
   static void SetDataReadOnly(void* address, size_t size);
 
  private:
+  static int GetCurrentThreadIdInternal();
+
   // These classes use the private memory management API below.
   friend class AddressSpaceReservation;
   friend class MemoryMappedFile;
@@ -402,9 +409,11 @@ class V8_BASE_EXPORT OS {
 
   V8_WARN_UNUSED_RESULT static bool DecommitPages(void* address, size_t size);
 
+  V8_WARN_UNUSED_RESULT static bool SealPages(void* address, size_t size);
+
   V8_WARN_UNUSED_RESULT static bool CanReserveAddressSpace();
 
-  V8_WARN_UNUSED_RESULT static Optional<AddressSpaceReservation>
+  V8_WARN_UNUSED_RESULT static std::optional<AddressSpaceReservation>
   CreateAddressSpaceReservation(void* hint, size_t size, size_t alignment,
                                 MemoryPermission max_permission);
 
@@ -476,8 +485,9 @@ class V8_BASE_EXPORT AddressSpaceReservation {
 
   V8_WARN_UNUSED_RESULT bool DecommitPages(void* address, size_t size);
 
-  V8_WARN_UNUSED_RESULT Optional<AddressSpaceReservation> CreateSubReservation(
-      void* address, size_t size, OS::MemoryPermission max_permission);
+  V8_WARN_UNUSED_RESULT std::optional<AddressSpaceReservation>
+  CreateSubReservation(void* address, size_t size,
+                       OS::MemoryPermission max_permission);
 
   V8_WARN_UNUSED_RESULT static bool FreeSubReservation(
       AddressSpaceReservation reservation);

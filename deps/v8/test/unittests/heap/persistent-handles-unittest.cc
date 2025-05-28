@@ -22,14 +22,14 @@ TEST_F(PersistentHandlesTest, OrderOfBlocks) {
 
   Address* next;
   Address* limit;
-  Handle<String> first_empty, last_empty;
+  DirectHandle<String> first_empty, last_empty;
   std::unique_ptr<PersistentHandles> ph;
 
   {
     PersistentHandlesScope persistent_scope(isolate);
 
     // fill block
-    first_empty = handle(ReadOnlyRoots(heap).empty_string(), isolate);
+    first_empty = direct_handle(ReadOnlyRoots(heap).empty_string(), isolate);
 
     while (data->next < data->limit) {
       handle(ReadOnlyRoots(heap).empty_string(), isolate);
@@ -37,7 +37,7 @@ TEST_F(PersistentHandlesTest, OrderOfBlocks) {
 
     // add second block and two more handles on it
     handle(ReadOnlyRoots(heap).empty_string(), isolate);
-    last_empty = handle(ReadOnlyRoots(heap).empty_string(), isolate);
+    last_empty = direct_handle(ReadOnlyRoots(heap).empty_string(), isolate);
 
     // remember next and limit in second block
     next = data->next;
@@ -199,7 +199,7 @@ TEST_F(PersistentHandlesTest, CreatePersistentHandles) {
 
 TEST_F(PersistentHandlesTest, DereferencePersistentHandle) {
   std::unique_ptr<PersistentHandles> phs = isolate()->NewPersistentHandles();
-  Handle<HeapNumber> ph;
+  IndirectHandle<HeapNumber> ph;
   {
     HandleScope handle_scope(isolate());
     Handle<HeapNumber> number = isolate()->factory()->NewHeapNumber(42.0);
@@ -216,9 +216,9 @@ TEST_F(PersistentHandlesTest, DereferencePersistentHandle) {
 TEST_F(PersistentHandlesTest, DereferencePersistentHandleFailsWhenDisallowed) {
   HandleScope handle_scope(isolate());
   std::unique_ptr<PersistentHandles> phs = isolate()->NewPersistentHandles();
-  Handle<HeapNumber> ph;
+  IndirectHandle<HeapNumber> ph;
   {
-    HandleScope handle_scope(isolate());
+    HandleScope inner_handle_scope(isolate());
     Handle<HeapNumber> number = isolate()->factory()->NewHeapNumber(42.0);
     ph = phs->NewHandle(number);
   }

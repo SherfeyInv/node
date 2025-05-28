@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <optional>
 #include <sstream>
 
 #include "debug-helper-internal.h"
@@ -18,9 +19,7 @@
 
 namespace i = v8::internal;
 
-namespace v8 {
-namespace internal {
-namespace debug_helper_internal {
+namespace v8::internal::debug_helper_internal {
 
 constexpr char kTaggedValue[] = "v8::internal::TaggedValue";
 constexpr char kSmi[] = "v8::internal::Smi";
@@ -93,9 +92,8 @@ TypedObject GetTypedObjectForString(uintptr_t address, i::InstanceType type,
     }
   };
 
-  return i::StringShape(type)
-      .DispatchToSpecificTypeWithoutCast<StringGetDispatcher, TypedObject>(
-          address, type_source);
+  return String::DispatchToSpecificTypeWithoutCast<StringGetDispatcher>(
+      type, address, type_source);
 }
 
 TypedObject GetTypedObjectByInstanceType(uintptr_t address,
@@ -216,7 +214,7 @@ TypedObject GetTypedHeapObject(uintptr_t address, d::MemoryAccessor accessor,
 class ReadStringVisitor : public TqObjectVisitor {
  public:
   struct Result {
-    v8::base::Optional<std::string> maybe_truncated_string;
+    std::optional<std::string> maybe_truncated_string;
     std::unique_ptr<ObjectProperty> maybe_raw_characters_property;
   };
   static Result Visit(d::MemoryAccessor accessor,
@@ -228,7 +226,7 @@ class ReadStringVisitor : public TqObjectVisitor {
   }
 
   // Returns the result as UTF-8 once visiting is complete.
-  v8::base::Optional<std::string> GetString() {
+  std::optional<std::string> GetString() {
     if (failed_) return {};
     std::vector<char> result(
         string_.size() * unibrow::Utf16::kMaxExtraUtf8BytesForOneUtf16CodeUnit);
@@ -373,11 +371,11 @@ class ReadStringVisitor : public TqObjectVisitor {
       Address memory_chunk =
           MemoryChunk::FromAddress(object->GetMapAddress())->address();
       uint32_t metadata_index = GetOrFinish(ReadValue<uint32_t>(
-          memory_chunk + MemoryChunkLayout::kMetadataIndexOffset));
+          memory_chunk + MemoryChunk::MetadataIndexOffset()));
       Address metadata_address = GetOrFinish(ReadValue<Address>(
           heap_addresses_.metadata_pointer_table, metadata_index));
       Address heap = GetOrFinish(ReadValue<Address>(
-          metadata_address + MemoryChunkLayout::kHeapOffset));
+          metadata_address + MemoryChunkMetadata::HeapOffset()));
       Isolate* isolate = Isolate::FromHeap(reinterpret_cast<Heap*>(heap));
       Address external_pointer_table_address_address =
           isolate->shared_external_pointer_table_address_address();
@@ -389,7 +387,8 @@ class ReadStringVisitor : public TqObjectVisitor {
           static_cast<int32_t>(resource_data >> kExternalPointerIndexShift);
       Address tagged_data =
           GetOrFinish(ReadValue<Address>(external_pointer_table, index));
-      Address data_address = tagged_data & ~kExternalStringResourceDataTag;
+      // We don't really need to perform the type check here.
+      Address data_address = tagged_data & kExternalPointerPayloadMask;
 #else
       uintptr_t data_address = static_cast<uintptr_t>(resource_data);
 #endif  // V8_ENABLE_SANDBOX
@@ -813,9 +812,7 @@ std::unique_ptr<StackFrameResult> GetStackFrame(
   return std::make_unique<StackFrameResult>(std::move(props));
 }
 
-}  // namespace debug_helper_internal
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::debug_helper_internal
 
 namespace di = v8::internal::debug_helper_internal;
 

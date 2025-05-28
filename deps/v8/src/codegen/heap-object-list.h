@@ -5,102 +5,41 @@
 #ifndef V8_CODEGEN_HEAP_OBJECT_LIST_H_
 #define V8_CODEGEN_HEAP_OBJECT_LIST_H_
 
-#define HEAP_MUTABLE_IMMOVABLE_OBJECT_LIST(V)                                  \
-  V(ArrayIteratorProtector, array_iterator_protector, ArrayIteratorProtector)  \
-  V(ArraySpeciesProtector, array_species_protector, ArraySpeciesProtector)     \
-  V(IsConcatSpreadableProtector, is_concat_spreadable_protector,               \
-    IsConcatSpreadableProtector)                                               \
-  V(MapIteratorProtector, map_iterator_protector, MapIteratorProtector)        \
-  V(NoElementsProtector, no_elements_protector, NoElementsProtector)           \
-  V(MegaDOMProtector, mega_dom_protector, MegaDOMProtector)                    \
-  V(NumberStringCache, number_string_cache, NumberStringCache)                 \
-  V(NumberStringNotRegexpLikeProtector,                                        \
-    number_string_not_regexp_like_protector,                                   \
-    NumberStringNotRegexpLikeProtector)                                        \
-  V(PromiseResolveProtector, promise_resolve_protector,                        \
-    PromiseResolveProtector)                                                   \
-  V(PromiseSpeciesProtector, promise_species_protector,                        \
-    PromiseSpeciesProtector)                                                   \
-  V(PromiseThenProtector, promise_then_protector, PromiseThenProtector)        \
-  V(RegExpSpeciesProtector, regexp_species_protector, RegExpSpeciesProtector)  \
-  V(SetIteratorProtector, set_iterator_protector, SetIteratorProtector)        \
-  V(StringIteratorProtector, string_iterator_protector,                        \
-    StringIteratorProtector)                                                   \
-  V(StringWrapperToPrimitiveProtector, string_wrapper_to_primitive_protector,  \
-    StringWrapperToPrimitiveProtector)                                         \
-  V(TypedArraySpeciesProtector, typed_array_species_protector,                 \
-    TypedArraySpeciesProtector)                                                \
-  V(AsyncFunctionAwaitRejectSharedFun, async_function_await_reject_shared_fun, \
-    AsyncFunctionAwaitRejectSharedFun)                                         \
-  V(AsyncFunctionAwaitResolveSharedFun,                                        \
-    async_function_await_resolve_shared_fun,                                   \
-    AsyncFunctionAwaitResolveSharedFun)                                        \
-  V(AsyncGeneratorAwaitRejectSharedFun,                                        \
-    async_generator_await_reject_shared_fun,                                   \
-    AsyncGeneratorAwaitRejectSharedFun)                                        \
-  V(AsyncGeneratorAwaitResolveSharedFun,                                       \
-    async_generator_await_resolve_shared_fun,                                  \
-    AsyncGeneratorAwaitResolveSharedFun)                                       \
-  V(AsyncGeneratorReturnClosedRejectSharedFun,                                 \
-    async_generator_return_closed_reject_shared_fun,                           \
-    AsyncGeneratorReturnClosedRejectSharedFun)                                 \
-  V(AsyncGeneratorReturnClosedResolveSharedFun,                                \
-    async_generator_return_closed_resolve_shared_fun,                          \
-    AsyncGeneratorReturnClosedResolveSharedFun)                                \
-  V(AsyncGeneratorReturnResolveSharedFun,                                      \
-    async_generator_return_resolve_shared_fun,                                 \
-    AsyncGeneratorReturnResolveSharedFun)                                      \
-  V(AsyncGeneratorYieldWithAwaitResolveSharedFun,                              \
-    async_generator_yield_with_await_resolve_shared_fun,                       \
-    AsyncGeneratorYieldWithAwaitResolveSharedFun)                              \
-  V(AsyncFromSyncIteratorCloseSyncAndRethrowSharedFun,                         \
-    async_from_sync_iterator_close_sync_and_rethrow_shared_fun,                \
-    AsyncFromSyncIteratorCloseSyncAndRethrowSharedFun)                         \
-  V(AsyncIteratorValueUnwrapSharedFun, async_iterator_value_unwrap_shared_fun, \
-    AsyncIteratorValueUnwrapSharedFun)                                         \
-  V(PromiseAllResolveElementSharedFun, promise_all_resolve_element_shared_fun, \
-    PromiseAllResolveElementSharedFun)                                         \
-  V(PromiseAllSettledRejectElementSharedFun,                                   \
-    promise_all_settled_reject_element_shared_fun,                             \
-    PromiseAllSettledRejectElementSharedFun)                                   \
-  V(PromiseAllSettledResolveElementSharedFun,                                  \
-    promise_all_settled_resolve_element_shared_fun,                            \
-    PromiseAllSettledResolveElementSharedFun)                                  \
-  V(PromiseAnyRejectElementSharedFun, promise_any_reject_element_shared_fun,   \
-    PromiseAnyRejectElementSharedFun)                                          \
-  V(PromiseCapabilityDefaultRejectSharedFun,                                   \
-    promise_capability_default_reject_shared_fun,                              \
-    PromiseCapabilityDefaultRejectSharedFun)                                   \
-  V(PromiseCapabilityDefaultResolveSharedFun,                                  \
-    promise_capability_default_resolve_shared_fun,                             \
-    PromiseCapabilityDefaultResolveSharedFun)                                  \
-  V(PromiseCatchFinallySharedFun, promise_catch_finally_shared_fun,            \
-    PromiseCatchFinallySharedFun)                                              \
-  V(PromiseGetCapabilitiesExecutorSharedFun,                                   \
-    promise_get_capabilities_executor_shared_fun,                              \
-    PromiseGetCapabilitiesExecutorSharedFun)                                   \
-  V(PromiseThenFinallySharedFun, promise_then_finally_shared_fun,              \
-    PromiseThenFinallySharedFun)                                               \
-  V(PromiseThrowerFinallySharedFun, promise_thrower_finally_shared_fun,        \
-    PromiseThrowerFinallySharedFun)                                            \
-  V(PromiseValueThunkFinallySharedFun, promise_value_thunk_finally_shared_fun, \
-    PromiseValueThunkFinallySharedFun)                                         \
-  V(ProxyRevokeSharedFun, proxy_revoke_shared_fun, ProxyRevokeSharedFun)       \
-  V(ShadowRealmImportValueFulfilledSFI,                                        \
-    shadow_realm_import_value_fulfilled_sfi,                                   \
-    ShadowRealmImportValueFulfilledSFI)                                        \
-  V(ArrayFromAsyncIterableOnFulfilledSharedFun,                                \
-    array_from_async_iterable_on_fulfilled_shared_fun,                         \
-    ArrayFromAsyncIterableOnFulfilledSharedFun)                                \
-  V(ArrayFromAsyncIterableOnRejectedSharedFun,                                 \
-    array_from_async_iterable_on_rejected_shared_fun,                          \
-    ArrayFromAsyncIterableOnRejectedSharedFun)                                 \
-  V(ArrayFromAsyncArrayLikeOnFulfilledSharedFun,                               \
-    array_from_async_array_like_on_fulfilled_shared_fun,                       \
-    ArrayFromAsyncArrayLikeOnFulfilledSharedFun)                               \
-  V(ArrayFromAsyncArrayLikeOnRejectedSharedFun,                                \
-    array_from_async_array_like_on_rejected_shared_fun,                        \
-    ArrayFromAsyncArrayLikeOnRejectedSharedFun)
+#define BUILTINS_WITH_SFI_OBJECT_LIST_ADAPTER(V, CamelName, underscore_name, \
+                                              ...)                           \
+  V(CamelName##SharedFun, underscore_name##_shared_fun, CamelName##SharedFun)
+
+#define BUILTINS_WITH_SFI_OBJECT_LIST(V) \
+  BUILTINS_WITH_SFI_LIST_GENERATOR(BUILTINS_WITH_SFI_OBJECT_LIST_ADAPTER, V)
+
+#define HEAP_MUTABLE_IMMOVABLE_OBJECT_LIST(V)                                 \
+  V(ArrayIteratorProtector, array_iterator_protector, ArrayIteratorProtector) \
+  V(ArraySpeciesProtector, array_species_protector, ArraySpeciesProtector)    \
+  V(IsConcatSpreadableProtector, is_concat_spreadable_protector,              \
+    IsConcatSpreadableProtector)                                              \
+  V(MapIteratorProtector, map_iterator_protector, MapIteratorProtector)       \
+  V(NoElementsProtector, no_elements_protector, NoElementsProtector)          \
+  V(MegaDOMProtector, mega_dom_protector, MegaDOMProtector)                   \
+  V(NumberStringCache, number_string_cache, NumberStringCache)                \
+  V(NumberStringNotRegexpLikeProtector,                                       \
+    number_string_not_regexp_like_protector,                                  \
+    NumberStringNotRegexpLikeProtector)                                       \
+  V(PromiseResolveProtector, promise_resolve_protector,                       \
+    PromiseResolveProtector)                                                  \
+  V(PromiseSpeciesProtector, promise_species_protector,                       \
+    PromiseSpeciesProtector)                                                  \
+  V(PromiseThenProtector, promise_then_protector, PromiseThenProtector)       \
+  V(RegExpSpeciesProtector, regexp_species_protector, RegExpSpeciesProtector) \
+  V(SetIteratorProtector, set_iterator_protector, SetIteratorProtector)       \
+  V(StringIteratorProtector, string_iterator_protector,                       \
+    StringIteratorProtector)                                                  \
+  V(StringWrapperToPrimitiveProtector, string_wrapper_to_primitive_protector, \
+    StringWrapperToPrimitiveProtector)                                        \
+  V(TypedArrayLengthProtector, typed_array_length_protector,                  \
+    TypedArrayLengthProtector)                                                \
+  V(TypedArraySpeciesProtector, typed_array_species_protector,                \
+    TypedArraySpeciesProtector)                                               \
+  BUILTINS_WITH_SFI_OBJECT_LIST(V)
 
 #define UNIQUE_INSTANCE_TYPE_IMMUTABLE_IMMOVABLE_MAP_ADAPTER( \
     V, rootIndexName, rootAccessorName, class_name)           \
@@ -135,6 +74,7 @@
     EmptySwissPropertyDictionary)                                            \
   V(EmptySlowElementDictionary, empty_slow_element_dictionary,               \
     EmptySlowElementDictionary)                                              \
+  V(EmptyWeakArrayList, empty_weak_array_list, EmptyWeakArrayList)           \
   V(empty_string, empty_string, EmptyString)                                 \
   V(error_to_string, error_to_string, ErrorToString)                         \
   V(error_string, error_string, ErrorString)                                 \
@@ -196,8 +136,6 @@
   V(resolve_string, resolve_string, ResolveString)                           \
   V(return_string, return_string, ReturnString)                              \
   V(search_symbol, search_symbol, SearchSymbol)                              \
-  V(SingleCharacterStringTable, single_character_string_table,               \
-    SingleCharacterStringTable)                                              \
   V(size_string, size_string, SizeString)                                    \
   V(species_symbol, species_symbol, SpeciesSymbol)                           \
   V(StaleRegister, stale_register, StaleRegister)                            \
@@ -220,8 +158,8 @@
   V(UndefinedValue, undefined_value, Undefined)                              \
   V(uninitialized_symbol, uninitialized_symbol, UninitializedSymbol)         \
   V(valueOf_string, valueOf_string, ValueOfString)                           \
-  V(wasm_wrapped_object_symbol, wasm_wrapped_object_symbol,                  \
-    WasmWrappedObjectSymbol)                                                 \
+  V(wasm_cross_instance_call_symbol, wasm_cross_instance_call_symbol,        \
+    WasmCrossInstanceCallSymbol)                                             \
   V(zero_string, zero_string, ZeroString)                                    \
   UNIQUE_INSTANCE_TYPE_MAP_LIST_GENERATOR(                                   \
       UNIQUE_INSTANCE_TYPE_IMMUTABLE_IMMOVABLE_MAP_ADAPTER, V)

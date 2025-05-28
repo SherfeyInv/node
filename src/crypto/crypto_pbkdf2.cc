@@ -9,6 +9,7 @@
 
 namespace node {
 
+using ncrypto::Digest;
 using v8::FunctionCallbackInfo;
 using v8::Int32;
 using v8::JustVoid;
@@ -65,12 +66,12 @@ Maybe<void> PBKDF2Traits::AdditionalConfig(
   ArrayBufferOrViewContents<char> pass(args[offset]);
   ArrayBufferOrViewContents<char> salt(args[offset + 1]);
 
-  if (UNLIKELY(!pass.CheckSizeInt32())) {
+  if (!pass.CheckSizeInt32()) [[unlikely]] {
     THROW_ERR_OUT_OF_RANGE(env, "pass is too large");
     return Nothing<void>();
   }
 
-  if (UNLIKELY(!salt.CheckSizeInt32())) {
+  if (!salt.CheckSizeInt32()) [[unlikely]] {
     THROW_ERR_OUT_OF_RANGE(env, "salt is too large");
     return Nothing<void>();
   }
@@ -88,20 +89,20 @@ Maybe<void> PBKDF2Traits::AdditionalConfig(
   CHECK(args[offset + 4]->IsString());  // digest_name
 
   params->iterations = args[offset + 2].As<Int32>()->Value();
-  if (params->iterations < 0) {
+  if (params->iterations < 0) [[unlikely]] {
     THROW_ERR_OUT_OF_RANGE(env, "iterations must be <= %d", INT_MAX);
     return Nothing<void>();
   }
 
   params->length = args[offset + 3].As<Int32>()->Value();
-  if (params->length < 0) {
+  if (params->length < 0) [[unlikely]] {
     THROW_ERR_OUT_OF_RANGE(env, "length must be <= %d", INT_MAX);
     return Nothing<void>();
   }
 
   Utf8Value name(args.GetIsolate(), args[offset + 4]);
-  params->digest = ncrypto::getDigestByName(name.ToStringView());
-  if (params->digest == nullptr) {
+  params->digest = Digest::FromName(*name);
+  if (!params->digest) [[unlikely]] {
     THROW_ERR_CRYPTO_INVALID_DIGEST(env, "Invalid digest: %s", *name);
     return Nothing<void>();
   }
@@ -111,7 +112,8 @@ Maybe<void> PBKDF2Traits::AdditionalConfig(
 
 bool PBKDF2Traits::DeriveBits(Environment* env,
                               const PBKDF2Config& params,
-                              ByteSource* out) {
+                              ByteSource* out,
+                              CryptoJobMode mode) {
   // Both pass and salt may be zero length here.
   auto dp = ncrypto::pbkdf2(params.digest,
                             ncrypto::Buffer<const char>{
@@ -126,6 +128,7 @@ bool PBKDF2Traits::DeriveBits(Environment* env,
                             params.length);
 
   if (!dp) return false;
+  DCHECK(!dp.isSecure());
   *out = ByteSource::Allocated(dp.release());
   return true;
 }
