@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -29,8 +30,7 @@
 #include "src/heap/reference-summarizer.h"
 #endif
 
-namespace v8 {
-namespace internal {
+namespace v8::internal {
 
 class AllocationTraceNode;
 class HeapEntry;
@@ -254,6 +254,8 @@ class HeapSnapshot {
     return snapshot_mode_ ==
            v8::HeapProfiler::HeapSnapshotMode::kExposeInternals;
   }
+  size_t extra_native_bytes() const { return extra_native_bytes_; }
+  void set_extra_native_bytes(size_t bytes) { extra_native_bytes_ = bytes; }
 
   void AddLocation(HeapEntry* entry, int scriptId, int line, int col);
   HeapEntry* AddEntry(HeapEntry::Type type,
@@ -290,6 +292,7 @@ class HeapSnapshot {
   SnapshotObjectId max_snapshot_js_object_id_ = -1;
   v8::HeapProfiler::HeapSnapshotMode snapshot_mode_;
   v8::HeapProfiler::NumericsMode numerics_mode_;
+  size_t extra_native_bytes_ = 0;
 
   // The ScriptsLineEndsMap instance stores the line ends of scripts that did
   // not get their line_ends() information populated in heap.
@@ -556,7 +559,7 @@ class V8_EXPORT_PRIVATE V8HeapExplorer : public HeapEntriesAllocator {
       HeapEntry::ReferenceVerification verification = HeapEntry::kVerify);
   void SetWeakReference(HeapEntry* parent_entry, int index,
                         Tagged<Object> child_obj,
-                        base::Optional<int> field_offset);
+                        std::optional<int> field_offset);
   void SetPropertyReference(HeapEntry* parent_entry,
                             Tagged<Name> reference_name, Tagged<Object> child,
                             const char* name_format_string = nullptr,
@@ -573,7 +576,7 @@ class V8_EXPORT_PRIVATE V8HeapExplorer : public HeapEntriesAllocator {
                              Tagged<Object> child);
   const char* GetStrongGcSubrootName(Tagged<HeapObject> object);
   void TagObject(Tagged<Object> obj, const char* tag,
-                 base::Optional<HeapEntry::Type> type = {},
+                 std::optional<HeapEntry::Type> type = {},
                  bool overwrite_existing_name = false);
   void RecursivelyTagConstantPool(Tagged<Object> obj, const char* tag,
                                   HeapEntry::Type type, int recursion_limit);
@@ -770,20 +773,20 @@ class HeapSnapshotJSONSerializer {
   void SerializeLocations();
 
   static const int kEdgeFieldsCount;
-  static const int kNodeFieldsCount;
+  static const int kNodeFieldsCountWithTraceNodeId;
+  static const int kNodeFieldsCountWithoutTraceNodeId;
 
   HeapSnapshot* snapshot_;
   base::CustomMatcherHashMap strings_;
   int next_node_id_;
   int next_string_id_;
   OutputStreamWriter* writer_;
+  uint32_t trace_function_count_ = 0;
 
   friend class HeapSnapshotJSONSerializerEnumerator;
   friend class HeapSnapshotJSONSerializerIterator;
 };
 
-
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal
 
 #endif  // V8_PROFILER_HEAP_SNAPSHOT_GENERATOR_H_

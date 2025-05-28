@@ -418,8 +418,11 @@ class V8_EXPORT CpuProfiler {
    * Synchronously collect current stack sample in all profilers attached to
    * the |isolate|. The call does not affect number of ticks recorded for
    * the current top node.
+   * |trace_id| is an optional identifier set to the collected sample.
+   * this is useful to associate the sample with a trace event.
    */
-  static void CollectSample(Isolate* isolate);
+  static void CollectSample(
+      Isolate* isolate, const std::optional<uint64_t> trace_id = std::nullopt);
 
   /**
    * Disposes the CPU profiler object.
@@ -937,6 +940,15 @@ class V8_EXPORT EmbedderGraph {
    */
   virtual void AddEdge(Node* from, Node* to, const char* name = nullptr) = 0;
 
+  /**
+   * Adds a count of bytes that are not associated with any particular Node.
+   * An embedder may use this to represent the size of nodes which were omitted
+   * from this EmbedderGraph despite being retained by the graph, or other
+   * overhead costs. This number will contribute to the total size in a heap
+   * snapshot, without being represented in the object graph.
+   */
+  virtual void AddNativeSize(size_t size) {}
+
   virtual ~EmbedderGraph() = default;
 };
 
@@ -1108,6 +1120,12 @@ class V8_EXPORT HeapProfiler {
       ActivityControl* control,
       ObjectNameResolver* global_object_name_resolver = nullptr,
       bool hide_internals = true, bool capture_numeric_value = false);
+
+  /**
+   * Obtains list of Detached JS Wrapper Objects. This functon calls garbage
+   * collection, then iterates over traced handles in the isolate
+   */
+  std::vector<v8::Local<v8::Value>> GetDetachedJSWrapperObjects();
 
   /**
    * Starts tracking of heap objects population statistics. After calling

@@ -35,22 +35,23 @@ Handle<SharedFunctionInfo> CreateSharedFunctionInfo(
                                     .ToHandleChecked();
   DirectHandle<Script> script = isolate->factory()->NewScript(source);
   DirectHandle<WeakFixedArray> infos = isolate->factory()->NewWeakFixedArray(3);
-  script->set_shared_function_infos(*infos);
+  script->set_infos(*infos);
   Handle<SharedFunctionInfo> shared =
       isolate->factory()->NewSharedFunctionInfoForBuiltin(
           isolate->factory()->NewStringFromAsciiChecked("f"),
-          Builtin::kCompileLazy);
+          Builtin::kCompileLazy, 0, kDontAdapt);
   int function_literal_id = 1;
   shared->set_function_literal_id(function_literal_id);
   shared->set_internal_formal_parameter_count(resource->parameter_count());
   // Ensure that the function can be compiled lazily.
   shared->set_uncompiled_data(
       *isolate->factory()->NewUncompiledDataWithoutPreparseDataWithJob(
-          ReadOnlyRoots(isolate).empty_string_handle(), 0, source->length()));
+          isolate->factory()->empty_string(), 0, source->length()));
   // Make sure we have an outer scope info, even though it's empty
   shared->set_raw_outer_scope_info_or_feedback_metadata(
       ScopeInfo::Empty(isolate));
-  shared->SetScript(ReadOnlyRoots(isolate), *script, function_literal_id);
+  shared->SetScript(isolate, ReadOnlyRoots(isolate), *script,
+                    function_literal_id);
   return scope.CloseAndEscape(shared);
 }
 

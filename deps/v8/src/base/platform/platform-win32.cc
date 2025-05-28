@@ -4,6 +4,8 @@
 
 // Platform-specific code for Win32.
 
+#include "src/base/platform/platform-win32.h"
+
 // Secure API functions are not available using MinGW with msvcrt.dll
 // on Windows XP. Make sure MINGW_HAS_SECURE_API is not defined to
 // disable definition of secure API functions in standard headers that
@@ -27,16 +29,16 @@
 #include <tlhelp32.h>           // For Module32First and al.
 
 #include <limits>
+#include <optional>
 
 #include "src/base/bits.h"
 #include "src/base/lazy-instance.h"
 #include "src/base/macros.h"
-#include "src/base/platform/platform-win32.h"
+#include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/timezone-cache.h"
 #include "src/base/utils/random-number-generator.h"
-#include "src/base/win32-headers.h"
 
 #if defined(_MSC_VER)
 #include <crtdbg.h>
@@ -136,15 +138,6 @@ int strncpy_s(char* dest, size_t dest_size, const char* source, size_t count) {
 
 namespace v8 {
 namespace base {
-
-namespace {
-
-// g_cet gets set to kEnabled on platform initialization if the Intel CET shadow
-// stack is found to be enabled for this process.
-enum PlatformCETStatus { kNotSet, kEnabled, kDisabled };
-PlatformCETStatus g_cet = kNotSet;
-
-}  // namespace
 
 class WindowsTimezoneCache : public TimezoneCache {
  public:
@@ -547,8 +540,7 @@ int OS::GetCurrentProcessId() {
   return static_cast<int>(::GetCurrentProcessId());
 }
 
-
-int OS::GetCurrentThreadId() {
+int OS::GetCurrentThreadIdInternal() {
   return static_cast<int>(::GetCurrentThreadId());
 }
 
@@ -788,16 +780,10 @@ bool UserShadowStackEnabled() {
   return uss_policy.EnableUserShadowStack;
 }
 
-void InitializeCETStatus() {
-  DCHECK_EQ(kNotSet, g_cet);
-  g_cet = UserShadowStackEnabled() ? kEnabled : kDisabled;
-}
-
 }  // namespace
 
 void OS::Initialize(AbortMode abort_mode, const char* const gc_fake_mmap) {
   g_abort_mode = abort_mode;
-  InitializeCETStatus();
 }
 
 typedef PVOID(__stdcall* VirtualAlloc2_t)(HANDLE, PVOID, SIZE_T, ULONG, ULONG,
@@ -830,8 +816,8 @@ void OS::EnsureWin32MemoryAPILoaded() {
 
 // static
 bool OS::IsHardwareEnforcedShadowStacksEnabled() {
-  DCHECK_NE(kNotSet, g_cet);
-  return g_cet == kEnabled;
+  static bool cet_enabled = UserShadowStackEnabled();
+  return cet_enabled;
 }
 
 // static
@@ -994,7 +980,7 @@ void* AllocateInternal(void* hint, size_t size, size_t alignment,
 
 void CheckIsOOMError(int error) {
   // We expect one of ERROR_NOT_ENOUGH_MEMORY or ERROR_COMMITMENT_LIMIT. We'd
-  // still like to get the actual error code when its not one of the expected
+  // still like to get the actual error code when it's not one of the expected
   // errors, so use the construct below to achieve that.
   if (error != ERROR_NOT_ENOUGH_MEMORY) CHECK_EQ(ERROR_COMMITMENT_LIMIT, error);
 }
@@ -1136,13 +1122,16 @@ bool OS::DecommitPages(void* address, size_t size) {
 }
 
 // static
+bool OS::SealPages(void* address, size_t size) { return false; }
+
+// static
 bool OS::CanReserveAddressSpace() {
   return VirtualAlloc2 != nullptr && MapViewOfFile3 != nullptr &&
          UnmapViewOfFile2 != nullptr;
 }
 
 // static
-Optional<AddressSpaceReservation> OS::CreateAddressSpaceReservation(
+std::optional<AddressSpaceReservation> OS::CreateAddressSpaceReservation(
     void* hint, size_t size, size_t alignment,
     MemoryPermission max_permission) {
   CHECK(CanReserveAddressSpace());
@@ -1256,20 +1245,17 @@ void OS::Abort() {
 
   switch (g_abort_mode) {
     case AbortMode::kExitWithSuccessAndIgnoreDcheckFailures:
-      _exit(0);
+      ExitProcess(0);
     case AbortMode::kExitWithFailureAndIgnoreDcheckFailures:
-      _exit(-1);
+      ExitProcess(-1);
     case AbortMode::kImmediateCrash:
       IMMEDIATE_CRASH();
     case AbortMode::kDefault:
       break;
   }
 
-  // Make the MSVCRT do a silent abort.
-  raise(SIGABRT);
-
   // Make sure function doesn't return.
-  abort();
+  ExitProcess(3);
 }
 
 
@@ -1364,7 +1350,8 @@ Win32MemoryMappedFile::~Win32MemoryMappedFile() {
   CloseHandle(file_);
 }
 
-Optional<AddressSpaceReservation> AddressSpaceReservation::CreateSubReservation(
+std::optional<AddressSpaceReservation>
+AddressSpaceReservation::CreateSubReservation(
     void* address, size_t size, OS::MemoryPermission max_permission) {
   // Nothing to do, the sub reservation must already have been split by now.
   DCHECK(Contains(address, size));

@@ -71,6 +71,11 @@ struct Word64T : IntegralT {
   static const MachineRepresentation kMachineRepresentation =
       MachineRepresentation::kWord64;
 };
+
+struct AdditiveSafeIntegerT : Word64T {
+  static constexpr MachineType kMachineType = MachineType::Int64();
+};
+
 struct Int64T : Word64T {
   static constexpr MachineType kMachineType = MachineType::Int64();
 };
@@ -97,6 +102,10 @@ struct IndirectPointerHandleT : Uint32T {
   static constexpr MachineType kMachineType = MachineType::Uint32();
 };
 
+struct JSDispatchHandleT : Uint32T {
+  static constexpr MachineType kMachineType = MachineType::Uint32();
+};
+
 #ifdef V8_ENABLE_SANDBOX
 struct ExternalPointerT : Uint32T {
   static constexpr MachineType kMachineType = MachineType::Uint32();
@@ -117,7 +126,7 @@ struct CppHeapPointerT : UntaggedT {
 };
 #endif  // !V8_COMPRESS_POINTERS
 
-struct Float16T : Word32T {
+struct Float16RawBitsT : Word32T {
   static constexpr MachineType kMachineType = MachineType::Uint16();
 };
 
@@ -137,6 +146,12 @@ struct Float64T : UntaggedT {
 using TaggedT = Int32T;
 #else
 using TaggedT = IntPtrT;
+#endif
+
+#ifdef V8_ENABLE_SANDBOX
+using TrustedPointerT = IndirectPointerHandleT;
+#else
+using TrustedPointerT = TaggedT;
 #endif
 
 // Result of a comparison operation.
@@ -183,6 +198,15 @@ struct MachineTypeOf<MaybeObject> {
   static constexpr MachineType value = MachineType::AnyTagged();
 };
 template <>
+struct MachineTypeOf<MaybeWeak<HeapObject>> {
+  // TODO(leszeks): Can this be TaggedPointer?
+  static constexpr MachineType value = MachineType::AnyTagged();
+};
+template <>
+struct MachineTypeOf<HeapObject> {
+  static constexpr MachineType value = MachineType::TaggedPointer();
+};
+template <>
 struct MachineTypeOf<Smi> {
   static constexpr MachineType value = MachineType::TaggedSigned();
 };
@@ -222,6 +246,13 @@ struct MachineTypeOf<Union<T, Ts...>> {
 
   static_assert(value.representation() != MachineRepresentation::kNone,
                 "no common representation");
+};
+
+// Special case for Union<HeapObject,TaggedIndex>, which torque uses for
+// TaggedZeroPattern and can be treated as an AnyTagged
+template <>
+struct MachineTypeOf<Union<HeapObject, TaggedIndex>> {
+  static constexpr MachineType value = MachineType::AnyTagged();
 };
 
 template <class Type, class Enable = void>
@@ -289,6 +320,10 @@ template <>
 struct is_subtype<ExternalReference, RawPtrT> {
   static const bool value = true;
 };
+template <>
+struct is_subtype<IntPtrT, RawPtrT> {
+  static const bool value = true;
+};
 
 template <class T, class U>
 struct types_have_common_values {
@@ -308,6 +343,10 @@ struct types_have_common_values<Int32T, U> {
 };
 template <class U>
 struct types_have_common_values<Uint64T, U> {
+  static const bool value = types_have_common_values<Word64T, U>::value;
+};
+template <class U>
+struct types_have_common_values<AdditiveSafeIntegerT, U> {
   static const bool value = types_have_common_values<Word64T, U>::value;
 };
 template <class U>
@@ -351,8 +390,10 @@ struct types_have_common_values<Union<Ts...>, Union<Us...>> {
 template <class T>
 class TNode {
  public:
-  template <class U, typename = std::enable_if_t<is_subtype<U, T>::value>>
-  TNode(const TNode<U>& other) V8_NOEXCEPT : node_(other.node_) {
+  template <class U>
+  TNode(const TNode<U>& other) V8_NOEXCEPT
+    requires(is_subtype<U, T>::value)
+      : node_(other.node_) {
     LazyTemplateChecks();
   }
 
@@ -399,9 +440,9 @@ class SloppyTNode : public TNode<T> {
  public:
   SloppyTNode(compiler::Node* node)  // NOLINT(runtime/explicit)
       : TNode<T>(node) {}
-  template <class U, typename std::enable_if<is_subtype<U, T>::value,
-                                             int>::type = 0>
+  template <class U>
   SloppyTNode(const TNode<U>& other) V8_NOEXCEPT  // NOLINT(runtime/explicit)
+    requires(is_subtype<U, T>::value)
       : TNode<T>(other) {}
 };
 

@@ -7,8 +7,9 @@
 
 #include <stdint.h>
 
+#include <optional>
+
 #include "src/base/macros.h"
-#include "src/base/optional.h"
 #include "src/base/platform/mutex.h"
 #include "src/common/globals.h"
 
@@ -29,7 +30,7 @@ enum PerThreadAssertType {
   HEAP_ALLOCATION_ASSERT,
   HANDLE_ALLOCATION_ASSERT,
   HANDLE_DEREFERENCE_ASSERT,
-  HANDLE_DEREFERENCE_ALL_THREADS_ASSERT,
+  HANDLE_USAGE_ON_ALL_THREADS_ASSERT,
   CODE_DEPENDENCY_CHANGE_ASSERT,
   CODE_ALLOCATION_ASSERT,
   // Dummy type for disabling GC mole.
@@ -209,10 +210,10 @@ using DisallowHandleDereference =
 using AllowHandleDereference =
     PerThreadAssertScopeDebugOnly<true, HANDLE_DEREFERENCE_ASSERT>;
 
-// Explicitly allow handle dereference for all threads/isolates on one
-// particular thread.
-using AllowHandleDereferenceAllThreads =
-    PerThreadAssertScopeDebugOnly<true, HANDLE_DEREFERENCE_ALL_THREADS_ASSERT>;
+// Explicitly allow handle dereference and creation for all threads/isolates on
+// one particular thread.
+using AllowHandleUsageOnAllThreads =
+    PerThreadAssertScopeDebugOnly<true, HANDLE_USAGE_ON_ALL_THREADS_ASSERT>;
 
 // Scope to document where we do not expect code dependencies to change.
 using DisallowCodeDependencyChange =
@@ -287,7 +288,7 @@ class DisallowHeapAccessIf {
   }
 
  private:
-  base::Optional<DisallowHeapAccess> maybe_disallow_;
+  std::optional<DisallowHeapAccess> maybe_disallow_;
 };
 
 // Like MutexGuard but also asserts that no garbage collection happens while
@@ -295,7 +296,7 @@ class DisallowHeapAccessIf {
 class V8_NODISCARD NoGarbageCollectionMutexGuard {
  public:
   explicit NoGarbageCollectionMutexGuard(base::Mutex* mutex)
-      : guard_(mutex), mutex_(mutex), no_gc_(base::in_place) {}
+      : guard_(mutex), mutex_(mutex), no_gc_(std::in_place) {}
 
   void Unlock() {
     mutex_->Unlock();
@@ -309,7 +310,7 @@ class V8_NODISCARD NoGarbageCollectionMutexGuard {
  private:
   base::MutexGuard guard_;
   base::Mutex* mutex_;
-  base::Optional<DisallowGarbageCollection> no_gc_;
+  std::optional<DisallowGarbageCollection> no_gc_;
 };
 
 // Explicit instantiation declarations.

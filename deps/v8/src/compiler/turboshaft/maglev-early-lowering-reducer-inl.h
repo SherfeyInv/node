@@ -5,6 +5,8 @@
 #ifndef V8_COMPILER_TURBOSHAFT_MAGLEV_EARLY_LOWERING_REDUCER_INL_H_
 #define V8_COMPILER_TURBOSHAFT_MAGLEV_EARLY_LOWERING_REDUCER_INL_H_
 
+#include <optional>
+
 #include "src/compiler/feedback-source.h"
 #include "src/compiler/globals.h"
 #include "src/compiler/turboshaft/assembler.h"
@@ -44,7 +46,7 @@ class MaglevEarlyLoweringReducer : public Next {
     if (first_instance_type == last_instance_type) {
 #if V8_STATIC_ROOTS_BOOL
       if (InstanceTypeChecker::UniqueMapOfInstanceType(first_instance_type)) {
-        base::Optional<RootIndex> expected_index =
+        std::optional<RootIndex> expected_index =
             InstanceTypeChecker::UniqueMapOfInstanceType(first_instance_type);
         CHECK(expected_index.has_value());
         Handle<HeapObject> expected_map =
@@ -68,7 +70,7 @@ class MaglevEarlyLoweringReducer : public Next {
   }
 
   V<InternalizedString> CheckedInternalizedString(
-      V<Object> object, OpIndex frame_state, bool check_smi,
+      V<Object> object, V<FrameState> frame_state, bool check_smi,
       const FeedbackSource& feedback) {
     if (check_smi) {
       __ DeoptimizeIf(__ IsSmi(object), frame_state, DeoptimizeReason::kSmi,
@@ -152,49 +154,25 @@ class MaglevEarlyLoweringReducer : public Next {
     // The result of a derived construct should be an object (in the ECMA
     // sense).
     Label<> do_throw(this);
+    Label<> end(this);
 
     // If the result is a smi, it is *not* an object in the ECMA sense.
-    GOTO_IF(__ IsSmi(construct_result), do_throw);
+    GOTO_IF(UNLIKELY(__ IsSmi(construct_result)), do_throw);
 
-    // Check if the type of the result is not an object done the ECMA sense.
-    IF_NOT (JSAnyIsNotPrimitive(V<HeapObject>::Cast(construct_result))) {
-      GOTO(do_throw);
-      BIND(do_throw);
+    // Check if the type of the result is not an object in the ECMA sense.
+    GOTO_IF(LIKELY(JSAnyIsNotPrimitive(V<HeapObject>::Cast(construct_result))),
+            end);
+    GOTO(do_throw);
+
+    BIND(do_throw);
+    {
       __ CallRuntime_ThrowConstructorReturnedNonObject(
           isolate_, frame_state, native_context, lazy_deopt_on_throw);
       // ThrowConstructorReturnedNonObject should not return.
       __ Unreachable();
     }
-  }
 
-  void CheckConstTrackingLetCellTagged(V<Context> context, V<Object> value,
-                                       int index, V<FrameState> frame_state,
-                                       const FeedbackSource& feedback) {
-    V<Object> old_value =
-        __ LoadTaggedField(context, Context::OffsetOfElementAt(index));
-    IF_NOT (__ TaggedEqual(old_value, value)) {
-      CheckConstTrackingLetCell(context, index, frame_state, feedback);
-    }
-  }
-
-  void CheckConstTrackingLetCell(V<Context> context, int index,
-                                 V<FrameState> frame_state,
-                                 const FeedbackSource& feedback) {
-    // Load the const tracking let side data.
-    V<Object> side_data = __ LoadTaggedField(
-        context, Context::OffsetOfElementAt(
-                     Context::CONST_TRACKING_LET_SIDE_DATA_INDEX));
-    V<Object> index_data = __ LoadTaggedField(
-        side_data, FixedArray::OffsetOfElementAt(
-                       index - Context::MIN_CONTEXT_EXTENDED_SLOTS));
-    // If the field is already marked as "not a constant", storing a
-    // different value is fine. But if it's anything else (including the hole,
-    // which means no value was stored yet), deopt this code. The lower tier
-    // code will update the side data and invalidate DependentCode if needed.
-    V<Word32> is_const = __ TaggedEqual(
-        index_data, __ SmiConstant(ConstTrackingLetCell::kNonConstMarker));
-    __ DeoptimizeIfNot(is_const, frame_state,
-                       DeoptimizeReason::kConstTrackingLet, feedback);
+    BIND(end);
   }
 
   V<Smi> UpdateJSArrayLength(V<Word32> length_raw, V<JSArray> object,
@@ -216,57 +194,27 @@ class MaglevEarlyLoweringReducer : public Next {
     return length_tagged;
   }
 
-  void TransitionElementsKindOrCheckMap(
-      V<Object> object, V<FrameState> frame_state, bool check_heap_object,
+  V<Map> TransitionMultipleElementsKind(
+      V<Object> object, V<Map> map,
       const ZoneVector<compiler::MapRef>& transition_sources,
-      const MapRef transition_target, const FeedbackSource& feedback) {
-    Label<> end(this);
-    Label<> if_smi(this);
-
-    TransitionElementsKind(object, transition_sources, transition_target,
-                           check_heap_object, if_smi, end);
-
-    __ DeoptimizeIfNot(
-        __ TaggedEqual(__ LoadMapField(object),
-                       __ HeapConstant(transition_target.object())),
-        frame_state, DeoptimizeReason::kWrongMap, feedback);
-    GOTO(end);
-
-    if (check_heap_object && if_smi.has_incoming_jump()) {
-      BIND(if_smi);
-      __ Deoptimize(frame_state, DeoptimizeReason::kSmi, feedback);
-    } else {
-      DCHECK(!if_smi.has_incoming_jump());
-    }
-
-    BIND(end);
-  }
-
-  void TransitionMultipleElementsKind(
-      V<Object> object, const ZoneVector<compiler::MapRef>& transition_sources,
       const MapRef transition_target) {
-    Label<> end(this);
+    Label<Map> end(this);
 
-    TransitionElementsKind(object, transition_sources, transition_target,
-                           /* check_heap_object */ true, end, end);
-
-    GOTO(end);
-    BIND(end);
+    TransitionElementsKind(object, map, transition_sources, transition_target,
+                           end);
+    GOTO(end, map);
+    BIND(end, result);
+    return result;
   }
 
   void TransitionElementsKind(
-      V<Object> object, const ZoneVector<compiler::MapRef>& transition_sources,
-      const MapRef transition_target, bool check_heap_object, Label<>& if_smi,
-      Label<>& end) {
-    if (check_heap_object) {
-      GOTO_IF(__ ObjectIsSmi(object), if_smi);
-    }
-
+      V<Object> object, V<Map> map,
+      const ZoneVector<compiler::MapRef>& transition_sources,
+      const MapRef transition_target, Label<Map>& end) {
     // Turboshaft's TransitionElementsKind operation loads the map everytime, so
     // we don't call it to have a single map load (in practice,
     // LateLoadElimination should probably eliminate the subsequent map loads,
     // but let's not risk it).
-    V<Map> map = __ LoadMapField(object);
     V<Map> target_map = __ HeapConstant(transition_target.object());
 
     for (const compiler::MapRef transition_source : transition_sources) {
@@ -280,14 +228,14 @@ class MaglevEarlyLoweringReducer : public Next {
               isolate_, __ NoContextConstant(), V<HeapObject>::Cast(object),
               target_map);
         }
-        GOTO(end);
+        GOTO(end, target_map);
       }
     }
   }
 
   V<Word32> JSAnyIsNotPrimitive(V<HeapObject> heap_object) {
     V<Map> map = __ LoadMapField(heap_object);
-    if (V8_STATIC_ROOTS_BOOL) {
+    if constexpr (V8_STATIC_ROOTS_BOOL) {
       // All primitive object's maps are allocated at the start of the read only
       // heap. Thus JS_RECEIVER's must have maps with larger (compressed)
       // addresses.
@@ -352,6 +300,119 @@ class MaglevEarlyLoweringReducer : public Next {
 
     BIND(done, result);
     return result;
+  }
+
+  V<Map> MigrateMapIfNeeded(V<HeapObject> object, V<Map> map,
+                            V<FrameState> frame_state,
+                            const FeedbackSource& feedback) {
+    ScopedVar<Map> result(this, map);
+
+    V<Word32> bitfield3 =
+        __ template LoadField<Word32>(map, AccessBuilder::ForMapBitField3());
+    IF (UNLIKELY(__ Word32BitwiseAnd(bitfield3,
+                                     Map::Bits3::IsDeprecatedBit::kMask))) {
+      V<Object> object_or_smi = __ CallRuntime_TryMigrateInstance(
+          isolate_, __ NoContextConstant(), object);
+      __ DeoptimizeIf(__ ObjectIsSmi(object_or_smi), frame_state,
+                      DeoptimizeReason::kInstanceMigrationFailed, feedback);
+      // Reload the map since TryMigrateInstance might have changed it.
+      result = __ LoadMapField(V<HeapObject>::Cast(object_or_smi));
+    }
+
+    return result;
+  }
+
+  V<PropertyArray> ExtendPropertiesBackingStore(
+      V<PropertyArray> old_property_array, V<JSObject> object, int old_length,
+      V<FrameState> frame_state, const FeedbackSource& feedback) {
+    // Allocate new PropertyArray.
+    int new_length = old_length + JSObject::kFieldsAdded;
+    Uninitialized<PropertyArray> new_property_array =
+        __ template Allocate<PropertyArray>(
+            __ IntPtrConstant(PropertyArray::SizeFor(new_length)),
+            AllocationType::kYoung);
+    __ InitializeField(new_property_array, AccessBuilder::ForMap(),
+                       __ HeapConstant(factory_->property_array_map()));
+
+    // Copy existing properties over.
+    for (int i = 0; i < old_length; i++) {
+      V<Object> old_value = __ template LoadField<Object>(
+          old_property_array, AccessBuilder::ForPropertyArraySlot(i));
+      __ InitializeField(new_property_array,
+                         AccessBuilder::ForPropertyArraySlot(i), old_value);
+    }
+
+    // Initialize new properties to undefined.
+    V<Undefined> undefined = __ HeapConstant(factory_->undefined_value());
+    for (int i = 0; i < JSObject::kFieldsAdded; ++i) {
+      __ InitializeField(new_property_array,
+                         AccessBuilder::ForPropertyArraySlot(old_length + i),
+                         undefined);
+    }
+
+    // Read the hash.
+    ScopedVar<Word32> hash(this);
+    if (old_length == 0) {
+      // The object might still have a hash, stored in properties_or_hash. If
+      // properties_or_hash is a SMI, then it's the hash. It can also be an
+      // empty PropertyArray.
+      V<Object> hash_obj = __ template LoadField<Object>(
+          object, AccessBuilder::ForJSObjectPropertiesOrHash());
+      IF (__ IsSmi(hash_obj)) {
+        hash = __ Word32ShiftLeft(__ UntagSmi(V<Smi>::Cast(hash_obj)),
+                                  PropertyArray::HashField::kShift);
+      } ELSE {
+        hash = __ Word32Constant(PropertyArray::kNoHashSentinel);
+      }
+    } else {
+      V<Smi> hash_smi = __ template LoadField<Smi>(
+          old_property_array, AccessBuilder::ForPropertyArrayLengthAndHash());
+      hash = __ Word32BitwiseAnd(__ UntagSmi(hash_smi),
+                                 PropertyArray::HashField::kMask);
+    }
+
+    // Add the new length and write the length-and-hash field.
+    static_assert(PropertyArray::LengthField::kShift == 0);
+    V<Word32> length_and_hash = __ Word32BitwiseOr(hash, new_length);
+    __ InitializeField(new_property_array,
+                       AccessBuilder::ForPropertyArrayLengthAndHash(),
+                       __ TagSmi(length_and_hash));
+
+    V<PropertyArray> initialized_new_property_array =
+        __ FinishInitialization(std::move(new_property_array));
+
+    // Replace the old property array in {object}.
+    __ StoreField(object, AccessBuilder::ForJSObjectPropertiesOrHash(),
+                  initialized_new_property_array);
+
+    return initialized_new_property_array;
+  }
+
+  void GeneratorStore(V<Context> context, V<JSGeneratorObject> generator,
+                      base::SmallVector<OpIndex, 32> parameters_and_registers,
+                      int suspend_id, int bytecode_offset) {
+    V<FixedArray> array = __ template LoadTaggedField<FixedArray>(
+        generator, JSGeneratorObject::kParametersAndRegistersOffset);
+    for (int i = 0; static_cast<size_t>(i) < parameters_and_registers.size();
+         i++) {
+      __ Store(array, parameters_and_registers[i], StoreOp::Kind::TaggedBase(),
+               MemoryRepresentation::AnyTagged(),
+               WriteBarrierKind::kFullWriteBarrier,
+               FixedArray::OffsetOfElementAt(i));
+    }
+    __ Store(generator, __ SmiConstant(Smi::FromInt(suspend_id)),
+             StoreOp::Kind::TaggedBase(), MemoryRepresentation::TaggedSigned(),
+             WriteBarrierKind::kNoWriteBarrier,
+             JSGeneratorObject::kContinuationOffset);
+    __ Store(generator, __ SmiConstant(Smi::FromInt(bytecode_offset)),
+             StoreOp::Kind::TaggedBase(), MemoryRepresentation::TaggedSigned(),
+             WriteBarrierKind::kNoWriteBarrier,
+             JSGeneratorObject::kInputOrDebugPosOffset);
+
+    __ Store(generator, context, StoreOp::Kind::TaggedBase(),
+             MemoryRepresentation::AnyTagged(),
+             WriteBarrierKind::kFullWriteBarrier,
+             JSGeneratorObject::kContextOffset);
   }
 
  private:

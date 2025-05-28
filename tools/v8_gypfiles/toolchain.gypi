@@ -86,10 +86,10 @@
     'binutils_dir%': '',
 
     'conditions': [
-      ['OS=="linux" and host_arch=="x64"', {
+      ['OS in "linux openharmony" and host_arch=="x64"', {
         'binutils_dir%': 'third_party/binutils/Linux_x64/Release/bin',
       }],
-      ['OS=="linux" and host_arch=="ia32"', {
+      ['OS in "linux openharmony" and host_arch=="ia32"', {
         'binutils_dir%': 'third_party/binutils/Linux_ia32/Release/bin',
       }],
     ],
@@ -97,33 +97,6 @@
     # Indicates if gcmole tools are downloaded by a hook.
     'gcmole%': 0,
   },
-
-  # [GYP] this needs to be outside of the top level 'variables'
-  'conditions': [
-    ['host_arch=="ia32" or host_arch=="x64" or \
-      host_arch=="ppc" or host_arch=="ppc64" or \
-      host_arch=="s390x" or \
-      clang==1', {
-      'variables': {
-        'host_cxx_is_biarch%': 1,
-       },
-     }, {
-      'variables': {
-        'host_cxx_is_biarch%': 0,
-      },
-    }],
-    ['target_arch=="ia32" or target_arch=="x64" or \
-      target_arch=="ppc" or target_arch=="ppc64" or \
-      target_arch=="s390x" or clang==1', {
-      'variables': {
-        'target_cxx_is_biarch%': 1,
-       },
-     }, {
-      'variables': {
-        'target_cxx_is_biarch%': 0,
-      },
-    }],
-  ],
   'target_defaults': {
     'include_dirs': [
       '<(V8_ROOT)',
@@ -156,6 +129,9 @@
         'xcode_settings': {
           # -Wno-invalid-offsetof
           'GCC_WARN_ABOUT_INVALID_OFFSETOF_MACRO': 'NO',
+          'OTHER_CFLAGS': [
+            '-Wno-nullability-completeness',
+          ],
         },
         'msvs_settings': {
           'VCCLCompilerTool': {
@@ -328,43 +304,24 @@
           }],
           ],
       }],  # s390x
-      ['v8_target_arch=="ppc" or v8_target_arch=="ppc64"', {
+      ['v8_target_arch=="ppc64"', {
+        'defines': [
+          'V8_TARGET_ARCH_PPC64',
+        ],
+        'cflags': [
+          '-ffp-contract=off',
+        ],
         'conditions': [
-          ['v8_target_arch=="ppc"', {
-            'defines': [
-              'V8_TARGET_ARCH_PPC',
-            ],
+          ['OS=="aix" or OS=="os400"', {
+            # Work around AIX ceil, trunc and round oddities.
+            'cflags': [ '-mcpu=power5+ -mfprnd' ],
           }],
-          ['v8_target_arch=="ppc64"', {
-            'defines': [
-              'V8_TARGET_ARCH_PPC64',
-            ],
-            'cflags': [
-              '-ffp-contract=off',
-            ],
-          }],
-          ['v8_host_byteorder=="little"', {
-            'defines': [
-              'V8_TARGET_ARCH_PPC_LE',
-            ],
-          }],
-          ['v8_host_byteorder=="big"', {
-            'defines': [
-              'V8_TARGET_ARCH_PPC_BE',
-            ],
-            'conditions': [
-              ['OS=="aix" or OS=="os400"', {
-                # Work around AIX ceil, trunc and round oddities.
-                'cflags': [ '-mcpu=power5+ -mfprnd' ],
-              }],
-              ['OS=="aix" or OS=="os400"', {
-                # Work around AIX assembler popcntb bug.
-                'cflags': [ '-mno-popcntb' ],
-              }],
-            ],
+          ['OS=="aix" or OS=="os400"', {
+            # Work around AIX assembler popcntb bug.
+            'cflags': [ '-mno-popcntb' ],
           }],
         ],
-      }],  # ppc
+      }],  # ppc64
       ['v8_target_arch=="ia32"', {
         'defines': [
           'V8_TARGET_ARCH_IA32',
@@ -546,6 +503,13 @@
         'msvs_configuration_attributes': {
           'CharacterSet': '1',
         },
+        'msvs_settings': {
+          'VCCLCompilerTool': {
+            'AdditionalOptions': [
+              '/bigobj', # Prevent C1128: number of sections exceeded object file format limit.
+            ],
+          },
+        },
       }],
       ['OS=="win" and v8_enable_prof==1', {
         'msvs_settings': {
@@ -566,7 +530,7 @@
           'V8_TARGET_OS_IOS',
         ]
       }],
-      ['OS=="linux"', {
+      ['OS=="linux" or OS=="openharmony"', {
         'defines': [
           'V8_HAVE_TARGET_OS',
           'V8_TARGET_OS_LINUX',
@@ -584,79 +548,12 @@
           'V8_TARGET_OS_WIN',
         ]
       }],
-      ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
-        v8_target_arch=="ia32"', {
+      ['OS in "linux freebsd openbsd solaris netbsd mac android qnx openharmony" and v8_target_arch=="ia32"', {
         'cflags': [
           '-msse2',
           '-mfpmath=sse',
           '-mmmx',  # Allows mmintrin.h for MMX intrinsics.
         ],
-      }],
-      ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
-         or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
-        (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
-         v8_target_arch=="ppc")', {
-        'target_conditions': [
-          ['_toolset=="host"', {
-            'conditions': [
-              ['host_cxx_is_biarch==1', {
-                'conditions': [
-                  ['host_arch=="s390x"', {
-                    'cflags': [ '-m31' ],
-                    'ldflags': [ '-m31' ]
-                  },{
-                   'cflags': [ '-m32' ],
-                   'ldflags': [ '-m32' ]
-                  }],
-                ],
-              }],
-            ],
-            'xcode_settings': {
-              'ARCHS': [ 'i386' ],
-            },
-          }],
-          ['_toolset=="target"', {
-            'conditions': [
-              ['target_cxx_is_biarch==1', {
-                'conditions': [
-                  ['host_arch=="s390x"', {
-                    'cflags': [ '-m31' ],
-                    'ldflags': [ '-m31' ]
-                  },{
-                   'cflags': [ '-m32' ],
-                   'ldflags': [ '-m32' ],
-                  }],
-                ],
-              }],
-            ],
-            'xcode_settings': {
-              'ARCHS': [ 'i386' ],
-            },
-          }],
-        ],
-      }],
-      ['(OS=="linux" or OS=="android") and \
-        (v8_target_arch=="x64" or v8_target_arch=="arm64" or \
-         v8_target_arch=="ppc64" or v8_target_arch=="s390x")', {
-        'target_conditions': [
-          ['_toolset=="host"', {
-            'conditions': [
-              ['host_cxx_is_biarch==1', {
-                'cflags': [ '-m64' ],
-                'ldflags': [ '-m64' ]
-              }],
-             ],
-           }],
-          ['_toolset=="target"', {
-             'conditions': [
-               ['target_cxx_is_biarch==1', {
-                 'cflags': [ '-m64' ],
-                 'ldflags': [ '-m64' ],
-               }],
-             ]
-           }],
-         ],
       }],
       ['OS=="android" and v8_android_log_stdout==1', {
         'defines': [
@@ -679,9 +576,6 @@
           '__STDC_FORMAT_MACROS',
           '_ALL_SOURCE=1'],
         'conditions': [
-          [ 'v8_target_arch=="ppc"', {
-            'ldflags': [ '-Wl,-bmaxdata:0x60000000/dsa' ],
-          }],
           [ 'v8_target_arch=="ppc64"', {
             'cflags': [ '-maix64', '-fdollars-in-identifiers', '-fno-extern-tls-init' ],
             'ldflags': [ '-maix64 -Wl,-bbigtoc' ],
@@ -695,7 +589,7 @@
           'DEBUG',
         ],
         'conditions': [
-          ['OS=="linux" and v8_enable_backtrace==1', {
+          ['OS in "linux openharmony" and v8_enable_backtrace==1', {
             # Support for backtrace_symbols.
             'ldflags': [ '-rdynamic' ],
           }],
@@ -742,8 +636,7 @@
               'v8_enable_slow_dchecks%': 1,
             },
             'conditions': [
-              ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx" or OS=="aix" or OS=="os400"', {
+              ['OS in "linux freebsd openbsd netbsd qnx aix os400 openharmony"', {
                 'cflags!': [
                   '-O3',
                   '-O2',
@@ -793,8 +686,7 @@
               'v8_enable_slow_dchecks%': 0,
             },
             'conditions': [
-              ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" or \
-            OS=="qnx" or OS=="aix" or OS=="os400"', {
+              ['OS in "linux freebsd openbsd netbsd qnx aix os400 openharmony"', {
                 'cflags!': [
                   '-O0',
                   '-O1',
@@ -830,7 +722,10 @@
           }],
           # Temporary refs: https://github.com/nodejs/node/pull/23801
           ['v8_enable_handle_zapping==1', {
-            'defines': ['ENABLE_HANDLE_ZAPPING',],
+            'defines': [
+              'ENABLE_LOCAL_HANDLE_ZAPPING',
+              'ENABLE_GLOBAL_HANDLE_ZAPPING',
+            ],
           }],
         ],
 
@@ -842,8 +737,7 @@
          # Temporary refs: https://github.com/nodejs/node/pull/23801
         'defines!': ['ENABLE_HANDLE_ZAPPING',],
         'conditions': [
-          ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="netbsd" \
-            or OS=="aix" or OS=="os400"', {
+          ['OS in "linux freebsd openbsd netbsd aix os400 openharmony"', {
             'cflags!': [
               '-Os',
             ],

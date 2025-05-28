@@ -12,6 +12,7 @@
 #include "src/maglev/maglev-graph.h"
 #include "src/maglev/maglev-ir.h"
 #include "src/objects/heap-number.h"
+#include "src/objects/instance-type-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -86,10 +87,9 @@ void MaglevAssembler::LoadSingleCharacterString(Register result,
     Assert(below_equal, AbortReason::kUnexpectedValue);
   }
   DCHECK_NE(char_code, scratch);
-  Register table = scratch;
-  LoadRoot(table, RootIndex::kSingleCharacterStringTable);
-  LoadTaggedFieldByIndex(result, table, char_code, kTaggedSize,
-                         FixedArray::kHeaderSize);
+  movq(result, MemOperand(kRootRegister, char_code, times_system_pointer_size,
+                          RootRegisterOffsetForRootIndex(
+                              RootIndex::kFirstSingleCharacterString)));
 }
 
 void MaglevAssembler::StringFromCharCode(RegisterSnapshot register_snapshot,
@@ -176,8 +176,6 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
       },
       mode, register_snapshot, done, result, string, index);
 
-  Register instance_type = scratch1;
-
   // We might need to try more than one time for ConsString, SlicedString and
   // ThinString.
   Label loop;
@@ -196,10 +194,47 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
     Check(below, AbortReason::kUnexpectedValue);
   }
 
+#if V8_STATIC_ROOTS_BOOL
+  Register map = scratch1;
+  LoadMapForCompare(map, string);
+#else
+  Register instance_type = scratch1;
   // Get instance type.
   LoadInstanceType(instance_type, string);
+#endif
 
   {
+#if V8_STATIC_ROOTS_BOOL
+    using StringTypeRange = InstanceTypeChecker::kUniqueMapRangeOfStringType;
+    // Check the string map ranges in dense increasing order, to avoid needing
+    // to subtract away the lower bound.
+    static_assert(StringTypeRange::kSeqString.first == 0);
+    CompareInt32AndJumpIf(map, StringTypeRange::kSeqString.second,
+                          kUnsignedLessThanEqual, &seq_string, Label::kNear);
+
+    static_assert(StringTypeRange::kSeqString.second + Map::kSize ==
+                  StringTypeRange::kExternalString.first);
+    CompareInt32AndJumpIf(map, StringTypeRange::kExternalString.second,
+                          kUnsignedLessThanEqual, deferred_runtime_call);
+    // TODO(victorgomes): Add fast path for external strings.
+
+    static_assert(StringTypeRange::kExternalString.second + Map::kSize ==
+                  StringTypeRange::kConsString.first);
+    CompareInt32AndJumpIf(map, StringTypeRange::kConsString.second,
+                          kUnsignedLessThanEqual, &cons_string, Label::kNear);
+
+    static_assert(StringTypeRange::kConsString.second + Map::kSize ==
+                  StringTypeRange::kSlicedString.first);
+    CompareInt32AndJumpIf(map, StringTypeRange::kSlicedString.second,
+                          kUnsignedLessThanEqual, &sliced_string, Label::kNear);
+
+    static_assert(StringTypeRange::kSlicedString.second + Map::kSize ==
+                  StringTypeRange::kThinString.first);
+    // No need to check for thin strings, they're the last string map.
+    static_assert(StringTypeRange::kThinString.second ==
+                  InstanceTypeChecker::kStringMapUpperBound);
+    // Fallthrough to thin string.
+#else
     // TODO(victorgomes): Add fast path for external strings.
     Register representation = kScratchRegister;
     movl(representation, instance_type);
@@ -213,6 +248,7 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
     cmpl(representation, Immediate(kThinStringTag));
     j(not_equal, deferred_runtime_call);
     // Fallthrough to thin string.
+#endif
   }
 
   // Is a thin string.
@@ -243,9 +279,20 @@ void MaglevAssembler::StringCharCodeOrCodePointAt(
   bind(&seq_string);
   {
     Label two_byte_string;
+#if V8_STATIC_ROOTS_BOOL
+    if (InstanceTypeChecker::kTwoByteStringMapBit == 0) {
+      TestInt32AndJumpIfAllClear(map,
+                                 InstanceTypeChecker::kStringMapEncodingMask,
+                                 &two_byte_string, Label::kNear);
+    } else {
+      TestInt32AndJumpIfAnySet(map, InstanceTypeChecker::kStringMapEncodingMask,
+                               &two_byte_string, Label::kNear);
+    }
+#else
     andl(instance_type, Immediate(kStringEncodingMask));
     cmpl(instance_type, Immediate(kTwoByteStringTag));
     j(equal, &two_byte_string, Label::kNear);
+#endif
     // The result of one-byte string will be the same for both modes
     // (CharCodeAt/CodePointAt), since it cannot be the first half of a
     // surrogate pair.
@@ -340,7 +387,8 @@ void MaglevAssembler::TruncateDoubleToInt32(Register dst, DoubleRegister src) {
 
 void MaglevAssembler::TryTruncateDoubleToInt32(Register dst, DoubleRegister src,
                                                Label* fail) {
-  // Truncating conversion of the input float64 value to a int32.
+  DCHECK_NE(src, kScratchDoubleReg);
+  // Truncating conversion of the input float64 value to an int32.
   Cvttpd2dq(kScratchDoubleReg, src);
   // Convert that int32 value back to float64.
   Cvtdq2pd(kScratchDoubleReg, kScratchDoubleReg);
@@ -401,7 +449,7 @@ void MaglevAssembler::TryTruncateDoubleToUint32(Register dst,
 void MaglevAssembler::TryChangeFloat64ToIndex(Register result,
                                               DoubleRegister value,
                                               Label* success, Label* fail) {
-  // Truncating conversion of the input float64 value to a int32.
+  // Truncating conversion of the input float64 value to an int32.
   Cvttpd2dq(kScratchDoubleReg, value);
   // Convert that int32 value back to float64.
   Cvtdq2pd(kScratchDoubleReg, kScratchDoubleReg);
@@ -423,13 +471,13 @@ void MaglevAssembler::OSRPrologue(Graph* graph) {
   uint32_t source_frame_size =
       graph->min_maglev_stackslots_for_unoptimized_frame_size();
 
-  if (v8_flags.maglev_assert_stack_size && v8_flags.debug_code) {
+  if (V8_ENABLE_SANDBOX_BOOL || v8_flags.debug_code) {
     movq(kScratchRegister, rbp);
     subq(kScratchRegister, rsp);
     cmpq(kScratchRegister,
          Immediate(source_frame_size * kSystemPointerSize +
                    StandardFrameConstants::kFixedFrameSizeFromFp));
-    Assert(equal, AbortReason::kOsrUnexpectedStackSize);
+    SbxCheck(equal, AbortReason::kOsrUnexpectedStackSize);
   }
 
   uint32_t target_frame_size =
@@ -466,19 +514,22 @@ void MaglevAssembler::Prologue(Graph* graph) {
     BindJumpTarget(code_gen_state()->entry_label());
   }
 
+#ifndef V8_ENABLE_LEAPTIERING
   // Tiering support.
   if (v8_flags.turbofan) {
     using D = MaglevOptimizeCodeOrTailCallOptimizedCodeSlotDescriptor;
     Register feedback_vector = D::GetRegisterParameter(D::kFeedbackVector);
     DCHECK(!AreAliased(feedback_vector, kJavaScriptCallArgCountRegister,
                        kJSFunctionRegister, kContextRegister,
-                       kJavaScriptCallNewTargetRegister));
+                       kJavaScriptCallNewTargetRegister,
+                       kJavaScriptCallDispatchHandleRegister));
     Move(feedback_vector,
          compilation_info()->toplevel_compilation_unit()->feedback().object());
     TailCallBuiltin(Builtin::kMaglevOptimizeCodeOrTailCallOptimizedCodeSlot,
                     CheckFeedbackVectorFlagsNeedsProcessing(feedback_vector,
                                                             CodeKind::MAGLEV));
   }
+#endif  // !V8_ENABLE_LEAPTIERING
 
   EnterFrame(StackFrame::MAGLEV);
   // Save arguments in frame.

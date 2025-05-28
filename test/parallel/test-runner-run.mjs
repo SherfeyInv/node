@@ -33,6 +33,38 @@ describe('require(\'node:test\').run', { concurrency: true }, () => {
     for await (const _ of stream);
   });
 
+  it('should emit diagnostic events with level parameter', async () => {
+    const diagnosticEvents = [];
+
+    const stream = run({
+      files: [join(testFixtures, 'coverage.js')],
+      reporter: 'spec',
+    });
+
+    stream.on('test:diagnostic', (event) => {
+      diagnosticEvents.push(event);
+    });
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
+    assert(diagnosticEvents.length > 0, 'No diagnostic events were emitted');
+    const infoEvent = diagnosticEvents.find((e) => e.level === 'info');
+    assert(infoEvent, 'No diagnostic events with level "info" were emitted');
+  });
+
+  const argPrintingFile = join(testFixtures, 'print-arguments.js');
+  it('should allow custom arguments via execArgv', async () => {
+    const result = await run({ files: [argPrintingFile], execArgv: ['-p', '"Printed"'] }).compose(spec).toArray();
+    assert.strictEqual(result[0].toString(), 'Printed\n');
+  });
+
+  it('should allow custom arguments via argv', async () => {
+    const stream = run({ files: [argPrintingFile], argv: ['--a-custom-argument'] });
+    stream.on('test:fail', common.mustNotCall());
+    stream.on('test:pass', common.mustCall());
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
+  });
+
   it('should run same file twice', async () => {
     const stream = run({
       files: [
@@ -56,10 +88,9 @@ describe('require(\'node:test\').run', { concurrency: true }, () => {
 
   it('should support timeout', async () => {
     const stream = run({ timeout: 50, files: [
-      fixtures.path('test-runner', 'never_ending_sync.js'),
-      fixtures.path('test-runner', 'never_ending_async.js'),
+      fixtures.path('test-runner', 'timeout-basic.mjs'),
     ] });
-    stream.on('test:fail', common.mustCall(2));
+    stream.on('test:fail', common.mustCall(1));
     stream.on('test:pass', common.mustNotCall());
     // eslint-disable-next-line no-unused-vars
     for await (const _ of stream);
@@ -178,6 +209,33 @@ describe('require(\'node:test\').run', { concurrency: true }, () => {
         controller.abort();
       }
     });
+  });
+
+  it('should include test type in enqueue, dequeue events', async (t) => {
+    const stream = await run({
+      files: [join(testFixtures, 'default-behavior/test/suite_and_test.cjs')],
+    });
+    t.plan(4);
+
+    stream.on('test:enqueue', common.mustCall((data) => {
+      if (data.name === 'this is a suite') {
+        t.assert.strictEqual(data.type, 'suite');
+      }
+      if (data.name === 'this is a test') {
+        t.assert.strictEqual(data.type, 'test');
+      }
+    }, 3));
+    stream.on('test:dequeue', common.mustCall((data) => {
+      if (data.name === 'this is a suite') {
+        t.assert.strictEqual(data.type, 'suite');
+      }
+      if (data.name === 'this is a test') {
+        t.assert.strictEqual(data.type, 'test');
+      }
+    }, 3));
+
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
   });
 
   describe('AbortSignal', () => {
@@ -482,6 +540,13 @@ describe('require(\'node:test\').run', { concurrency: true }, () => {
       });
     });
 
+    it('should only allow a string in options.cwd', async () => {
+      [Symbol(), {}, [], () => {}, 0, 1, 0n, 1n, true, false]
+        .forEach((cwd) => assert.throws(() => run({ cwd }), {
+          code: 'ERR_INVALID_ARG_TYPE'
+        }));
+    });
+
     it('should only allow object as options', () => {
       [Symbol(), [], () => {}, 0, 1, 0n, 1n, '', '1', true, false]
         .forEach((options) => assert.throws(() => run(options), {
@@ -513,6 +578,73 @@ describe('require(\'node:test\').run', { concurrency: true }, () => {
     // eslint-disable-next-line no-unused-vars
     for await (const _ of stream);
     assert.match(stderr, /Warning: node:test run\(\) is being called recursively/);
+  });
+
+  it('should run with different cwd', async () => {
+    const stream = run({
+      cwd: fixtures.path('test-runner', 'cwd')
+    });
+    stream.on('test:fail', common.mustNotCall());
+    stream.on('test:pass', common.mustCall(1));
+
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
+  });
+
+  it('should handle a non-existent directory being provided as cwd', async () => {
+    const diagnostics = [];
+    const stream = run({
+      cwd: fixtures.path('test-runner', 'cwd', 'non-existing')
+    });
+    stream.on('test:fail', common.mustNotCall());
+    stream.on('test:pass', common.mustNotCall());
+    stream.on('test:stderr', common.mustNotCall());
+    stream.on('test:diagnostic', ({ message }) => {
+      diagnostics.push(message);
+    });
+
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
+    for (const entry of [
+      'tests 0',
+      'suites 0',
+      'pass 0',
+      'fail 0',
+      'cancelled 0',
+      'skipped 0',
+      'todo 0',
+    ]
+    ) {
+      assert.strictEqual(diagnostics.includes(entry), true);
+    }
+  });
+
+  it('should handle a non-existent file being provided as cwd', async () => {
+    const diagnostics = [];
+    const stream = run({
+      cwd: fixtures.path('test-runner', 'default-behavior', 'test', 'random.cjs')
+    });
+    stream.on('test:fail', common.mustNotCall());
+    stream.on('test:pass', common.mustNotCall());
+    stream.on('test:stderr', common.mustNotCall());
+    stream.on('test:diagnostic', ({ message }) => {
+      diagnostics.push(message);
+    });
+
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream);
+    for (const entry of [
+      'tests 0',
+      'suites 0',
+      'pass 0',
+      'fail 0',
+      'cancelled 0',
+      'skipped 0',
+      'todo 0',
+    ]
+    ) {
+      assert.strictEqual(diagnostics.includes(entry), true);
+    }
   });
 });
 

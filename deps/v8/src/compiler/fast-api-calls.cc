@@ -14,7 +14,7 @@ namespace v8 {
 // reasons: better performance and a simpler ABI for generated code and fast
 // API calls.
 ASSERT_TRIVIALLY_COPYABLE(api_internal::IndirectHandleBase);
-#ifdef V8_ENABLE_DIRECT_LOCAL
+#ifdef V8_ENABLE_DIRECT_HANDLE
 ASSERT_TRIVIALLY_COPYABLE(api_internal::DirectHandleBase);
 #endif
 ASSERT_TRIVIALLY_COPYABLE(LocalBase<Object>);
@@ -62,50 +62,6 @@ ElementsKind GetTypedArrayElementsKind(CTypeInfo::Type type) {
   }
 }
 
-OverloadsResolutionResult ResolveOverloads(
-    const FastApiCallFunctionVector& candidates, unsigned int arg_count) {
-  DCHECK_GT(arg_count, 0);
-
-  static constexpr int kReceiver = 1;
-
-  // Only the case of the overload resolution of two functions, one with a
-  // JSArray param and the other with a typed array param is currently
-  // supported.
-  DCHECK_EQ(candidates.size(), 2);
-
-  for (unsigned int arg_index = kReceiver; arg_index < arg_count; arg_index++) {
-    int index_of_func_with_js_array_arg = -1;
-    int index_of_func_with_typed_array_arg = -1;
-    CTypeInfo::Type element_type = CTypeInfo::Type::kVoid;
-
-    for (size_t i = 0; i < candidates.size(); i++) {
-      const CTypeInfo& type_info =
-          candidates[i].signature->ArgumentInfo(arg_index);
-      CTypeInfo::SequenceType sequence_type = type_info.GetSequenceType();
-
-      if (sequence_type == CTypeInfo::SequenceType::kIsSequence) {
-        DCHECK_LT(index_of_func_with_js_array_arg, 0);
-        index_of_func_with_js_array_arg = static_cast<int>(i);
-      } else if (sequence_type == CTypeInfo::SequenceType::kIsTypedArray) {
-        DCHECK_LT(index_of_func_with_typed_array_arg, 0);
-        index_of_func_with_typed_array_arg = static_cast<int>(i);
-        element_type = type_info.GetType();
-      } else {
-        DCHECK_LT(index_of_func_with_js_array_arg, 0);
-        DCHECK_LT(index_of_func_with_typed_array_arg, 0);
-      }
-    }
-
-    if (index_of_func_with_js_array_arg >= 0 &&
-        index_of_func_with_typed_array_arg >= 0) {
-      return {static_cast<int>(arg_index), element_type};
-    }
-  }
-
-  // No overload found with a JSArray and a typed array as i-th argument.
-  return OverloadsResolutionResult::Invalid();
-}
-
 bool CanOptimizeFastSignature(const CFunctionInfo* c_signature) {
   USE(c_signature);
 
@@ -119,6 +75,14 @@ bool CanOptimizeFastSignature(const CFunctionInfo* c_signature) {
 #ifndef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
   if (c_signature->ReturnInfo().GetType() == CTypeInfo::Type::kFloat32 ||
       c_signature->ReturnInfo().GetType() == CTypeInfo::Type::kFloat64) {
+    return false;
+  }
+#endif
+
+#ifdef V8_USE_SIMULATOR_WITH_GENERIC_C_CALLS
+  if (!v8_flags.fast_api_allow_float_in_sim &&
+      (c_signature->ReturnInfo().GetType() == CTypeInfo::Type::kFloat32 ||
+       c_signature->ReturnInfo().GetType() == CTypeInfo::Type::kFloat64)) {
     return false;
   }
 #endif
@@ -148,6 +112,14 @@ bool CanOptimizeFastSignature(const CFunctionInfo* c_signature) {
     }
 #endif
 
+#ifdef V8_USE_SIMULATOR_WITH_GENERIC_C_CALLS
+    if (!v8_flags.fast_api_allow_float_in_sim &&
+        (c_signature->ArgumentInfo(i).GetType() == CTypeInfo::Type::kFloat32 ||
+         c_signature->ArgumentInfo(i).GetType() == CTypeInfo::Type::kFloat64)) {
+      return false;
+    }
+#endif
+
 #ifndef V8_TARGET_ARCH_64_BIT
     if (c_signature->ArgumentInfo(i).GetType() == CTypeInfo::Type::kInt64 ||
         c_signature->ArgumentInfo(i).GetType() == CTypeInfo::Type::kUint64) {
@@ -163,7 +135,7 @@ bool CanOptimizeFastSignature(const CFunctionInfo* c_signature) {
 
 class FastApiCallBuilder {
  public:
-  FastApiCallBuilder(Isolate* isolate, Graph* graph,
+  FastApiCallBuilder(Isolate* isolate, TFGraph* graph,
                      GraphAssembler* graph_assembler,
                      const GetParameter& get_parameter,
                      const ConvertReturnValue& convert_return_value,
@@ -177,8 +149,7 @@ class FastApiCallBuilder {
         initialize_options_(initialize_options),
         generate_slow_api_call_(generate_slow_api_call) {}
 
-  Node* Build(const FastApiCallFunctionVector& c_functions,
-              const CFunctionInfo* c_signature, Node* data_argument);
+  Node* Build(FastApiCallFunction c_function, Node* data_argument);
 
  private:
   Node* WrapFastCall(const CallDescriptor* call_descriptor, int inputs_size,
@@ -188,10 +159,10 @@ class FastApiCallBuilder {
   void PropagateException();
 
   Isolate* isolate() const { return isolate_; }
-  Graph* graph() const { return graph_; }
+  TFGraph* graph() const { return graph_; }
   GraphAssembler* gasm() const { return graph_assembler_; }
   Isolate* isolate_;
-  Graph* graph_;
+  TFGraph* graph_;
   GraphAssembler* graph_assembler_;
   const GetParameter& get_parameter_;
   const ConvertReturnValue& convert_return_value_;
@@ -259,34 +230,14 @@ void FastApiCallBuilder::PropagateException() {
   __ Call(call_descriptor, count, inputs);
 }
 
-Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
-                                const CFunctionInfo* c_signature,
+Node* FastApiCallBuilder::Build(FastApiCallFunction c_function,
                                 Node* data_argument) {
+  const CFunctionInfo* c_signature = c_function.signature;
   const int c_arg_count = c_signature->ArgumentCount();
 
   // Hint to fast path.
   auto if_success = __ MakeLabel();
   auto if_error = __ MakeDeferredLabel();
-
-  // Overload resolution
-  bool generate_fast_call = false;
-  OverloadsResolutionResult overloads_resolution_result =
-      OverloadsResolutionResult::Invalid();
-
-  if (c_functions.size() == 1) {
-    generate_fast_call = true;
-  } else {
-    DCHECK_EQ(c_functions.size(), 2);
-    overloads_resolution_result = ResolveOverloads(c_functions, c_arg_count);
-    if (overloads_resolution_result.is_valid()) {
-      generate_fast_call = true;
-    }
-  }
-
-  if (!generate_fast_call) {
-    // Only generate the slow call.
-    return generate_slow_api_call_();
-  }
 
   // Generate fast call.
 
@@ -312,18 +263,11 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
   // address associated to the first and only element in the c_functions vector.
   // If there are multiple overloads the value of this input will be set later
   // with a Phi node created by AdaptOverloadedFastCallArgument.
-  inputs[kFastTargetAddressInputIndex] =
-      (c_functions.size() == 1) ? __ ExternalConstant(ExternalReference::Create(
-                                      c_functions[0].address, ref_type))
-                                : nullptr;
+  inputs[kFastTargetAddressInputIndex] = __ ExternalConstant(
+      ExternalReference::Create(c_function.address, ref_type));
 
   for (int i = 0; i < c_arg_count; ++i) {
-    inputs[i + kFastTargetAddressInputCount] =
-        get_parameter_(i, overloads_resolution_result, &if_error);
-    if (overloads_resolution_result.target_address) {
-      inputs[kFastTargetAddressInputIndex] =
-          overloads_resolution_result.target_address;
-    }
+    inputs[i + kFastTargetAddressInputCount] = get_parameter_(i, &if_error);
   }
   DCHECK_NOT_NULL(inputs[kFastTargetAddressInputIndex]);
 
@@ -334,10 +278,12 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
   builder.AddReturn(return_type);
   for (int i = 0; i < c_arg_count; ++i) {
     CTypeInfo type = c_signature->ArgumentInfo(i);
+    START_ALLOW_USE_DEPRECATED()
     MachineType machine_type =
         type.GetSequenceType() == CTypeInfo::SequenceType::kScalar
             ? MachineType::TypeForCType(type)
             : MachineType::AnyTagged();
+    END_ALLOW_USE_DEPRECATED()
     builder.AddParam(machine_type);
   }
 
@@ -348,14 +294,8 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
     // If this check fails, you've probably added new fields to
     // v8::FastApiCallbackOptions, which means you'll need to write code
     // that initializes and reads from them too.
-    static_assert(kSize == sizeof(uintptr_t) * 4);
+    static_assert(kSize == sizeof(uintptr_t) * 2);
     stack_slot = __ StackSlot(kSize, kAlign);
-
-    __ Store(
-        StoreRepresentation(MachineRepresentation::kWord32, kNoWriteBarrier),
-        stack_slot,
-        static_cast<int>(offsetof(v8::FastApiCallbackOptions, fallback)),
-        __ Int32Constant(0));
 
     __ Store(StoreRepresentation(MachineType::PointerRepresentation(),
                                  kNoWriteBarrier),
@@ -377,7 +317,7 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
   }
 
   CallDescriptor* call_descriptor =
-      Linkage::GetSimplifiedCDescriptor(graph()->zone(), builder.Build());
+      Linkage::GetSimplifiedCDescriptor(graph()->zone(), builder.Get());
 
   Node* c_call_result =
       WrapFastCall(call_descriptor, c_arg_count + extra_input_count + 1, inputs,
@@ -405,25 +345,11 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
   Node* fast_call_result = convert_return_value_(c_signature, c_call_result);
 
   auto merge = __ MakeLabel(MachineRepresentation::kTagged);
-  if (c_signature->HasOptions()) {
-    DCHECK_NOT_NULL(stack_slot);
-    Node* load = __ Load(
-        MachineType::Int32(), stack_slot,
-        static_cast<int>(offsetof(v8::FastApiCallbackOptions, fallback)));
+  __ Goto(&if_success);
 
-    Node* is_zero = __ Word32Equal(load, __ Int32Constant(0));
-    __ Branch(is_zero, &if_success, &if_error);
-  } else {
-    __ Goto(&if_success);
-  }
-
-  // We need to generate a fallback (both fast and slow call) in case:
-  // 1) the generated code might fail, in case e.g. a Smi was passed where
-  // a JSObject was expected and an error must be thrown or
-  // 2) the embedder requested fallback possibility via providing options arg.
-  // None of the above usually holds true for Wasm functions with primitive
-  // types only, so we avoid generating an extra branch here.
-  DCHECK_IMPLIES(c_signature->HasOptions(), if_error.IsUsed());
+  // We need to generate a fallback (both fast and slow call) in case
+  // the generated code might fail, in case e.g. a Smi was passed where
+  // a JSObject was expected and an error must be thrown
   if (if_error.IsUsed()) {
     // Generate direct slow call.
     __ Bind(&if_error);
@@ -442,10 +368,9 @@ Node* FastApiCallBuilder::Build(const FastApiCallFunctionVector& c_functions,
 
 #undef __
 
-Node* BuildFastApiCall(Isolate* isolate, Graph* graph,
+Node* BuildFastApiCall(Isolate* isolate, TFGraph* graph,
                        GraphAssembler* graph_assembler,
-                       const FastApiCallFunctionVector& c_functions,
-                       const CFunctionInfo* c_signature, Node* data_argument,
+                       FastApiCallFunction c_function, Node* data_argument,
                        const GetParameter& get_parameter,
                        const ConvertReturnValue& convert_return_value,
                        const InitializeOptions& initialize_options,
@@ -453,7 +378,47 @@ Node* BuildFastApiCall(Isolate* isolate, Graph* graph,
   FastApiCallBuilder builder(isolate, graph, graph_assembler, get_parameter,
                              convert_return_value, initialize_options,
                              generate_slow_api_call);
-  return builder.Build(c_functions, c_signature, data_argument);
+  return builder.Build(c_function, data_argument);
+}
+
+FastApiCallFunction GetFastApiCallTarget(
+    JSHeapBroker* broker, FunctionTemplateInfoRef function_template_info,
+    size_t arg_count) {
+  if (!v8_flags.turbo_fast_api_calls) return {0, nullptr};
+
+  static constexpr int kReceiver = 1;
+
+  const ZoneVector<const CFunctionInfo*>& signatures =
+      function_template_info.c_signatures(broker);
+  const size_t overloads_count = signatures.size();
+
+  // Only considers entries whose type list length matches arg_count.
+  for (size_t i = 0; i < overloads_count; i++) {
+    const CFunctionInfo* c_signature = signatures[i];
+    const size_t len = c_signature->ArgumentCount() - kReceiver;
+    bool optimize_to_fast_call =
+        (len == arg_count) &&
+        fast_api_call::CanOptimizeFastSignature(c_signature);
+
+    if (optimize_to_fast_call) {
+      // TODO(nicohartmann@): {Flags::kEnforceRangeBit} is currently only
+      // supported on 64 bit architectures. We should support this on 32 bit
+      // architectures.
+#if defined(V8_TARGET_ARCH_32_BIT)
+      for (unsigned int j = 0; j < c_signature->ArgumentCount(); ++j) {
+        const uint8_t flags =
+            static_cast<uint8_t>(c_signature->ArgumentInfo(j).GetFlags());
+        if (flags & static_cast<uint8_t>(CTypeInfo::Flags::kEnforceRangeBit)) {
+          // Bailout
+          return {0, nullptr};
+        }
+      }
+#endif
+      return {function_template_info.c_functions(broker)[i], c_signature};
+    }
+  }
+
+  return {0, nullptr};
 }
 
 }  // namespace fast_api_call

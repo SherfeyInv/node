@@ -6,8 +6,8 @@
 #define V8_COMPILER_BACKEND_CODE_GENERATOR_H_
 
 #include <memory>
+#include <optional>
 
-#include "src/base/optional.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/optimized-compilation-info.h"
 #include "src/codegen/safepoint-table.h"
@@ -36,6 +36,9 @@ struct BranchInfo {
   FlagsCondition condition;
   Label* true_label;
   Label* false_label;
+  // Whether there a hint that this branch is unlikely to change direction,
+  // such as a WebAssembly hinted branch or a trap.
+  bool hinted;
   bool fallthru;
 };
 
@@ -76,7 +79,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   explicit CodeGenerator(Zone* codegen_zone, Frame* frame, Linkage* linkage,
                          InstructionSequence* instructions,
                          OptimizedCompilationInfo* info, Isolate* isolate,
-                         base::Optional<OsrHelper> osr_helper,
+                         std::optional<OsrHelper> osr_helper,
                          int start_source_position,
                          JumpOptimizationInfo* jump_opt,
                          const AssemblerOptions& options, Builtin builtin,
@@ -225,7 +228,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
 #if V8_TARGET_ARCH_X64
   void AssembleArchBinarySearchSwitchRange(
       Register input, RpoNumber def_block, std::pair<int32_t, Label*>* begin,
-      std::pair<int32_t, Label*>* end, base::Optional<int32_t>& last_cmp_value);
+      std::pair<int32_t, Label*>* end, std::optional<int32_t>& last_cmp_value);
 #else
   void AssembleArchBinarySearchSwitchRange(Register input, RpoNumber def_block,
                                            std::pair<int32_t, Label*>* begin,
@@ -234,15 +237,27 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   void AssembleArchBinarySearchSwitch(Instruction* instr);
   void AssembleArchTableSwitch(Instruction* instr);
 
-  // Generates code that checks whether the {kJavaScriptCallCodeStartRegister}
+  // Generates code to check whether the {kJavaScriptCallCodeStartRegister}
   // contains the expected pointer to the start of the instruction stream.
   void AssembleCodeStartRegisterCheck();
+
+#ifdef V8_ENABLE_LEAPTIERING
+  // Generates code to check whether the {kJavaScriptCallDispatchHandleRegister}
+  // references a valid entry compatible with this code.
+  void AssembleDispatchHandleRegisterCheck();
+#endif  // V8_ENABLE_LEAPTIERING
 
   // When entering a code that is marked for deoptimization, rather continuing
   // with its execution, we jump to a lazy compiled code. We need to do this
   // because this code has already been deoptimized and needs to be unlinked
   // from the JS functions referring it.
+  // TODO(olivf, 42204201) Rename this to AssertNotDeoptimized once
+  // non-leaptiering is removed from the codebase.
   void BailoutIfDeoptimized();
+
+  // Assemble NOP instruction for lazy deoptimization. This place will be
+  // patched later as a jump instruction to deoptimization trampoline.
+  void AssemblePlaceHolderForLazyDeopt(Instruction* instr);
 
   // Generates an architecture-specific, descriptor-specific prologue
   // to set up a stack frame.
@@ -342,9 +357,9 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   // Adds a jump table that is emitted after the actual code.  Returns label
   // pointing to the beginning of the table.  {targets} is assumed to be static
   // or zone allocated.
-  Label* AddJumpTable(Label** targets, size_t target_count);
+  Label* AddJumpTable(base::Vector<Label*> targets);
   // Emits a jump table.
-  void AssembleJumpTable(Label** targets, size_t target_count);
+  void AssembleJumpTable(base::Vector<Label*> targets);
 
   // ===========================================================================
   // ================== Deoptimization table construction. =====================
@@ -353,7 +368,11 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   void RecordCallPosition(Instruction* instr);
   void RecordDeoptInfo(Instruction* instr, int pc_offset);
   Handle<DeoptimizationData> GenerateDeoptimizationData();
+  int DefineProtectedDeoptimizationLiteral(
+      IndirectHandle<TrustedObject> object);
   int DefineDeoptimizationLiteral(DeoptimizationLiteral literal);
+  bool HasProtectedDeoptimizationLiteral(
+      IndirectHandle<TrustedObject> object) const;
   DeoptimizationEntry const& GetDeoptimizationEntry(Instruction* instr,
                                                     size_t frame_state_offset);
 
@@ -405,6 +424,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
   int eager_deopt_count_ = 0;
   int lazy_deopt_count_ = 0;
   ZoneDeque<DeoptimizationExit*> deoptimization_exits_;
+  ZoneDeque<IndirectHandle<TrustedObject>> protected_deoptimization_literals_;
   ZoneDeque<DeoptimizationLiteral> deoptimization_literals_;
   size_t inlined_function_count_ = 0;
   FrameTranslationBuilder translations_;
@@ -442,7 +462,7 @@ class V8_EXPORT_PRIVATE CodeGenerator final : public GapResolver::Assembler {
 
   JumpTable* jump_tables_;
   OutOfLineCode* ools_;
-  base::Optional<OsrHelper> osr_helper_;
+  std::optional<OsrHelper> osr_helper_;
   int osr_pc_offset_;
   SourcePositionTableBuilder source_position_table_builder_;
 #if V8_ENABLE_WEBASSEMBLY

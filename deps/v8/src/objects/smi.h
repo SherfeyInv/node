@@ -5,6 +5,8 @@
 #ifndef V8_OBJECTS_SMI_H_
 #define V8_OBJECTS_SMI_H_
 
+#include <type_traits>
+
 #include "src/common/globals.h"
 #include "src/objects/tagged.h"
 
@@ -52,17 +54,28 @@ class Smi : public AllStatic {
                         (32 - kSmiValueSize));
   }
 
-  template <typename E,
-            typename = typename std::enable_if<std::is_enum<E>::value>::type>
-  static inline constexpr Tagged<Smi> FromEnum(E value) {
+  template <typename E>
+  static inline constexpr Tagged<Smi> FromEnum(E value)
+    requires std::is_enum<E>::value
+  {
     static_assert(sizeof(E) <= sizeof(int));
     return FromInt(static_cast<int>(value));
   }
 
   // Returns whether value can be represented in a Smi.
-  static inline bool constexpr IsValid(intptr_t value) {
+  template <typename T>
+  static inline bool constexpr IsValid(T value)
+    requires(std::is_integral_v<T> && std::is_signed_v<T>)
+  {
     DCHECK_EQ(Internals::IsValidSmi(value),
               value >= kMinValue && value <= kMaxValue);
+    return Internals::IsValidSmi(value);
+  }
+  template <typename T>
+  static inline bool constexpr IsValid(T value)
+    requires(std::is_integral_v<T> && std::is_unsigned_v<T>)
+  {
+    DCHECK_EQ(Internals::IsValidSmi(value), value <= kMaxValue);
     return Internals::IsValidSmi(value);
   }
 
